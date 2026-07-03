@@ -51,8 +51,30 @@ class TTS:
         text = text.strip()
         if len(text) <= MAX_CHARS_BEFORE_SPLIT:
             return [text]
-        raw_segments = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
-        return self._merge_short_segments(raw_segments)
+        sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+        packed = self._pack_sentences(sentences, MAX_CHARS_BEFORE_SPLIT)
+        return self._merge_short_segments(packed)
+
+    def _pack_sentences(self, sentences: list[str], max_chars: int) -> list[str]:
+        """Regroupe les phrases par paquets (chacun <= max_chars) au lieu de
+        creer un segment audio par phrase : synthetiser chaque phrase seule
+        cree une coupure/redemarrage de prosodie audible entre CHAQUE phrase
+        (VITS traite chaque appel comme un discours complet independant).
+        En regroupant plusieurs phrases par appel (adouci ensuite par
+        _soften_internal_sentence_ends), on ne cree une vraie coupure que la
+        ou elle est necessaire (limite de longueur), pas a chaque point."""
+        chunks: list[str] = []
+        current = ""
+        for sentence in sentences:
+            candidate = f"{current} {sentence}".strip() if current else sentence
+            if current and len(candidate) > max_chars:
+                chunks.append(current)
+                current = sentence
+            else:
+                current = candidate
+        if current:
+            chunks.append(current)
+        return chunks
 
     def _merge_short_segments(self, segments: list[str]) -> list[str]:
         """Fusionne les fragments trop courts (ex. '1.' d'une liste numerotee)

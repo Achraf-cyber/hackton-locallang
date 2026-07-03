@@ -31,6 +31,24 @@ def test_tts_merges_bare_numbered_list_markers():
     assert all(len(s) > 5 for s in segments), segments
 
 
+def test_tts_packs_multiple_sentences_per_segment():
+    """Regression : decouper phrase par phrase cree une coupure de prosodie
+    audible (redemarrage) ENTRE CHAQUE phrase, pas seulement en fin de texte.
+    On doit regrouper les phrases par paquets (<=500 caracteres chacun) et ne
+    couper qu'en cas de depassement, pas a chaque point."""
+    tts = TTS()
+    sentence = "Ceci est une phrase de taille moyenne pour le test. "
+    text = sentence * 12  # ~624 caracteres, 12 phrases identiques
+    assert len(text) > 500
+
+    segments = tts._split_text(text)
+
+    # Avant le correctif : 12 segments (un par phrase). Le regroupement doit
+    # produire beaucoup moins de segments que de phrases.
+    assert len(segments) < 4, segments
+    assert all(len(s) <= 500 + 60 for s in segments), segments  # marge : derniere phrase du paquet
+
+
 def test_tts_softens_internal_sentence_ends_only():
     """Regression : VITS traite chaque ponctuation finale comme une fin de
     discours (intonation descendante + pause longue), meme au milieu d'un
