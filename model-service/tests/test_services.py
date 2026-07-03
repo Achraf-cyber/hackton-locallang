@@ -62,6 +62,36 @@ def test_tts_softens_internal_sentence_ends_only():
     assert tts._soften_internal_sentence_ends("Une seule phrase.") == "Une seule phrase."
 
 
+def test_tts_normalizes_foreign_chars_for_mos():
+    """Regression : le tokenizer VITS de mms-tts-mos SUPPRIME SILENCIEUSEMENT
+    toute lettre absente de son vocabulaire ('c', 'h', 'j', 'q', 'x' n'y sont
+    pas). Un nom propre francais non traduit par NLLB (normal : NLLB ne
+    traduit pas les noms propres) perdait donc des lettres entieres
+    ('Achraf' -> 'araf'). On les remplace par l'approximation la plus proche
+    au lieu de les perdre."""
+    tts = TTS()
+
+    assert tts._normalize_foreign_chars("Achraf", "mos") == "Asraf"
+    assert tts._normalize_foreign_chars("Jean", "mos") == "zean"
+    assert tts._normalize_foreign_chars("Cherif", "mos") == "serif"
+
+    # Aucune lettre du resultat ne doit etre hors du vocabulaire mos (a part
+    # l'espace/apostrophe/tiret, toujours autorises).
+    allowed = tts._get_allowed_chars("mos")
+    for word in ["Achraf", "Jean", "Cherif", "Québec"]:
+        normalized = tts._normalize_foreign_chars(word, "mos")
+        for ch in normalized:
+            assert ch in allowed or ch.lower() in allowed, (word, normalized, ch)
+
+
+def test_tts_normalize_foreign_chars_is_noop_for_dyu_native_letters():
+    """dyu a deja 'c'/'h'/'j' dans son vocabulaire : un mot les utilisant ne
+    doit pas etre modifie (contrairement a mos)."""
+    tts = TTS()
+    assert tts._normalize_foreign_chars("Achraf", "dyu") == "Achraf"
+    assert tts._normalize_foreign_chars("Jean", "dyu") == "Jean"
+
+
 @pytest.mark.slow
 def test_tts_speak_numbered_list_real():
     """Reproduit le crash original avec une vraie synthese VITS."""

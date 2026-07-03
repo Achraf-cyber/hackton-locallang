@@ -21,6 +21,27 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _LETTERS_RE = re.compile(r"[^a-zA-ZÀ-ÖØ-öø-ÿ]")
 _SENTENCE_END_RE = re.compile(r"[.!?]+")
 
+# EXPERIMENTAL : NLLB laisse a raison les noms propres francais/anglais tels
+# quels (ex. "Jean Dupont", "Tetouan") -- mais le tokenizer VITS de
+# mms-tts-{dyu,mos} ne connait que l'alphabet phonetique de sa langue, et
+# SUPPRIME SILENCIEUSEMENT toute lettre absente de son vocabulaire (verifie
+# par inspection directe : "Achraf" -> "araf" en moore, "c" et "h" n'existant
+# pas dans le vocabulaire mos). On remplace donc chaque lettre absente par
+# l'approximation phonetique la plus proche plutot que de la perdre.
+_ACCENT_TRANSLATION = str.maketrans(
+    {
+        "é": "e", "è": "e", "ê": "e", "ë": "e",
+        "à": "a", "â": "a", "ä": "a",
+        "î": "i", "ï": "i",
+        "ô": "o", "ö": "o",
+        "ù": "u", "û": "u", "ü": "u",
+        "ç": "s",
+        "ñ": "n",
+    }
+)
+_CONSONANT_FALLBACK = {"c": "k", "h": "", "j": "z", "q": "k", "x": "ks"}
+_CH_DIGRAPH_RE = re.compile(r"ch", re.IGNORECASE)
+
 
 class TTS:
     _instance = None
@@ -29,6 +50,7 @@ class TTS:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._models: dict[str, VitsModel] = {}
         self._tokenizers: dict[str, VitsTokenizer] = {}
+        self._allowed_chars: dict[str, set[str]] = {}
 
     @classmethod
     def get_instance(cls) -> "TTS":
@@ -94,6 +116,38 @@ class TTS:
                 merged.append(buffer)
         return merged
 
+    def _get_allowed_chars(self, lang: str) -> set[str]:
+        if lang not in self._allowed_chars:
+            _, tokenizer = self._get_model(lang)
+            vocab = tokenizer.get_vocab()
+            self._allowed_chars[lang] = {k for k in vocab if len(k) == 1} | {" ", "'", "-"}
+        return self._allowed_chars[lang]
+
+    def _normalize_foreign_chars(self, text: str, lang: str) -> str:
+        """Remplace chaque lettre absente du vocabulaire de la langue cible
+        par l'approximation phonetique la plus proche (voir commentaire plus
+        haut). Les mots deja ecrits dans l'alphabet de la langue cible ne
+        contiennent, par construction, que des lettres deja autorisees : cette
+        fonction ne les modifie donc pas."""
+        allowed = self._get_allowed_chars(lang)
+
+        # Digramme francais "ch" (/sh/) : a traiter comme une unite AVANT le
+        # remplacement lettre par lettre, seulement si 'h' n'est pas dans
+        # l'alphabet cible (sinon les deux lettres existent deja separement,
+        # ex. dyu, et on les laisse telles quelles).
+        if "h" not in allowed:
+            text = _CH_DIGRAPH_RE.sub("s" if "s" in allowed else "", text)
+
+        text = text.translate(_ACCENT_TRANSLATION)
+
+        result = []
+        for ch in text:
+            if ch in allowed or ch.lower() in allowed:
+                result.append(ch)
+            else:
+                result.append(_CONSONANT_FALLBACK.get(ch.lower(), ch))
+        return "".join(result)
+
     def _soften_internal_sentence_ends(self, text: str) -> str:
         """VITS (MMS-TTS) est entraine phrase par phrase : il plaque une
         cadence "fin de discours" (intonation descendante + pause longue) sur
@@ -114,6 +168,7 @@ class TTS:
     def _synthesize_segment(self, text: str, lang: str) -> np.ndarray:
         model, tokenizer = self._get_model(lang)
         text = self._soften_internal_sentence_ends(text)
+        text = self._normalize_foreign_chars(text, lang)
         inputs = tokenizer(text, return_tensors="pt").to(self.device)
         with torch.no_grad():
             output = model(**inputs).waveform
