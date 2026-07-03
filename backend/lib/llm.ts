@@ -54,6 +54,21 @@ function model(): LanguageModel {
   return provider(modelId);
 }
 
+// IMPORTANT : le texte genere ici est ensuite traduit en Dioula/Moore par
+// NLLB-200-distilled-600M (voir model-service), un modele tres peu
+// performant sur ces deux langues (tres peu de donnees d'entrainement,
+// majoritairement issues de corpus religieux). Verifie empiriquement : des
+// formules de politesse/adieu ("Au revoir.", "Prenez soin de vous.") sont
+// systematiquement mal traduites en Moore en invoquant "Zeova"/"Zeeze"
+// (Jehovah/Jesus, artefact du corpus d'entrainement). On evite donc de
+// GENERER ce type de formule cote Gemini, plutot que d'essayer de corriger
+// la traduction en aval.
+const NO_SIGNOFF_RULE =
+  "Ne termine jamais par une formule de politesse, un souhait, un remerciement " +
+  "ou une invitation a revenir (pas de \"n'hesitez pas\", \"bonne journee\", " +
+  "\"a bientot\", \"n'hesitez pas a revenir\", etc.). Arrete-toi juste apres " +
+  "l'information utile.";
+
 const SIMPLIFY_SYSTEM = `Tu es un médiateur administratif ouest-africain. Tu réécris un texte
 administratif en français très simple, destiné à une personne peu lettrée.
 Règles strictes :
@@ -63,6 +78,7 @@ Règles strictes :
   1) C'est quoi (une phrase).
   2) Les démarches, numérotées (1., 2., 3., ...).
   3) À apporter (liste courte).
+- ${NO_SIGNOFF_RULE}
 Réponds uniquement avec le texte simplifié, sans préambule.`;
 
 const ANSWER_SYSTEM = `Tu es un agent d'accueil chaleureux des services publics en Afrique de
@@ -75,7 +91,8 @@ zéro jargon).
   concrètes, sans inventer.
 - Question totalement hors sujet (ex : aide en programmation, culture
   générale sans lien avec les services publics) : recentre poliment vers les
-  services publics.`;
+  services publics.
+- ${NO_SIGNOFF_RULE}`;
 
 const READ_IMAGE_SYSTEM = `Tu es un médiateur administratif. On te montre un document (photo ou PDF).
 Réponds en français très simple (phrases courtes, zéro jargon), dans cet ordre :
@@ -86,6 +103,7 @@ Réponds en français très simple (phrases courtes, zéro jargon), dans cet ord
 2) Explique ensuite en 2-3 phrases ce qu'est ce document et ce que la personne
    doit faire.
 Reste concis : la reponse totale doit rester courte, elle sera lue a voix haute.
+${NO_SIGNOFF_RULE}
 Si le document est illisible ou n'est pas exploitable, dis-le honnêtement au
 lieu d'inventer une information.`;
 
