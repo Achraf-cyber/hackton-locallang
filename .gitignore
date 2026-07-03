@@ -1,0 +1,17 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.db
+*.wav
+*.log
+media/
+
+# Node
+node_modules/
+.next/
+.env.local
+
+# Env
+.env

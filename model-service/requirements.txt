@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+python-multipart
+transformers
+torch
+accelerate
+sentencepiece
+pydantic-settings
+python-dotenv
+soundfile
+scipy
+pydub
+audioop-lts; python_version >= "3.13"
+pillow
+requests
+pytest
+httpx
