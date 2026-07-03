@@ -53,6 +53,14 @@ export function getBot(): Bot {
 
   const bot = new Bot(env.TELEGRAM_TOKEN);
 
+  bot.api
+    .setMyCommands([
+      { command: "start", description: "Démarrer / choisir la langue" },
+      { command: "lang", description: "Changer de langue (Dioula / Mooré)" },
+      { command: "help", description: "Voir ce que je sais faire" },
+    ])
+    .catch((err) => console.error("[telegram] setMyCommands a échoué:", err));
+
   bot.command("start", async (ctx) => {
     await ctx.reply(
       "👋 Bienvenue ! Je peux vous aider avec les démarches administratives, " +
@@ -62,11 +70,34 @@ export function getBot(): Bot {
     );
   });
 
+  bot.command("lang", async (ctx) => {
+    await ctx.reply("🗣️ Choisissez votre langue :", { reply_markup: langKeyboard() });
+  });
+
+  bot.command("help", async (ctx) => {
+    await ctx.reply(
+      "ℹ️ Voici ce que je peux faire :\n\n" +
+        "🎤 Envoyez une note vocale — je réponds en note vocale.\n" +
+        "📷 Envoyez une photo ou un PDF d'un document — je vous explique ce qu'il contient.\n" +
+        "⌨️ Écrivez une question — je réponds simplement.\n\n" +
+        "Commandes :\n" +
+        "/start — démarrer / choisir la langue\n" +
+        "/lang — changer de langue à tout moment\n" +
+        "/help — afficher ce message",
+    );
+  });
+
   bot.callbackQuery(/^lang:(dyu|mos)$/, async (ctx) => {
     const lang = ctx.match[1] as LocalLang;
+    const previous = ctx.chat ? chatLang.get(ctx.chat.id) : undefined;
     if (ctx.chat) chatLang.set(ctx.chat.id, lang);
     await ctx.answerCallbackQuery();
-    await ctx.reply(lang === "dyu" ? "✅ Dioula sélectionné." : "✅ Mooré sélectionné.");
+    const label = lang === "dyu" ? "Dioula" : "Mooré";
+    await ctx.reply(
+      previous && previous !== lang
+        ? `✅ Langue changée : ${label}.`
+        : `✅ ${label} sélectionné.`,
+    );
   });
 
   async function requireLang(chatId: number): Promise<LocalLang | null> {
