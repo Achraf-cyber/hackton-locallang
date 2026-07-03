@@ -15,8 +15,10 @@ MMS_TTS_MODEL_NAMES = {
 
 MAX_CHARS_BEFORE_SPLIT = 500
 SILENCE_SECONDS = 0.3
+MIN_SEGMENT_LETTERS = 4
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_LETTERS_RE = re.compile(r"[^a-zA-ZÀ-ÖØ-öø-ÿ]")
 
 
 class TTS:
@@ -48,7 +50,26 @@ class TTS:
         text = text.strip()
         if len(text) <= MAX_CHARS_BEFORE_SPLIT:
             return [text]
-        return [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+        raw_segments = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+        return self._merge_short_segments(raw_segments)
+
+    def _merge_short_segments(self, segments: list[str]) -> list[str]:
+        """Fusionne les fragments trop courts (ex. '1.' d'une liste numerotee)
+        avec le fragment suivant : VITS plante (narrow(): length must be
+        non-negative) sur une sequence phonemisee trop courte."""
+        merged: list[str] = []
+        buffer = ""
+        for seg in segments:
+            buffer = f"{buffer} {seg}".strip() if buffer else seg
+            if len(_LETTERS_RE.sub("", buffer)) >= MIN_SEGMENT_LETTERS:
+                merged.append(buffer)
+                buffer = ""
+        if buffer:
+            if merged:
+                merged[-1] = f"{merged[-1]} {buffer}".strip()
+            else:
+                merged.append(buffer)
+        return merged
 
     def _synthesize_segment(self, text: str, lang: str) -> np.ndarray:
         model, tokenizer = self._get_model(lang)
