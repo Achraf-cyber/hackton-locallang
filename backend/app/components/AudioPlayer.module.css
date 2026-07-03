@@ -1,0 +1,92 @@
+.player {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #f4faf7;
+  border: 1px solid #d9ece2;
+  border-radius: 16px;
+  padding: 12px 16px;
+}
+
+.playButton {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #0a6e46 0%, #128a5c 100%);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px -6px rgba(10, 110, 70, 0.5);
+  transition: transform 0.15s ease;
+}
+
+.playButton:active {
+  transform: scale(0.94);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0a6e46;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.track {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 32px;
+}
+
+.bar {
+  flex: 1;
+  min-width: 2px;
+  height: 30%;
+  border-radius: 999px;
+  background: #c8ddd2;
+  transition: background 0.2s ease;
+}
+
+.bar:nth-child(3n) {
+  height: 55%;
+}
+
+.bar:nth-child(5n) {
+  height: 85%;
+}
+
+.bar:nth-child(7n) {
+  height: 45%;
+}
+
+.barActive {
+  background: #0a6e46;
+}
+
+.barAnimated {
+  animation: bounce 0.9s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: scaleY(0.7);
+  }
+  50% {
+    transform: scaleY(1.15);
+  }
+}

@@ -48,10 +48,17 @@ la question d'un usager sur une démarche administrative. Si la question sort du
 domaine administratif/services publics, recentre poliment vers ce domaine sans
 inventer d'information.`;
 
-const READ_IMAGE_SYSTEM = `Tu es un médiateur administratif. On te montre la photo d'un document.
-Explique en français très simple ce que dit ce document et ce que la personne
-doit faire (phrases courtes, zéro jargon). Si l'image est illisible ou n'est pas
-un document exploitable, dis-le honnêtement au lieu d'inventer.`;
+const READ_IMAGE_SYSTEM = `Tu es un médiateur administratif. On te montre un document (photo ou PDF).
+Réponds en français très simple (phrases courtes, zéro jargon), dans cet ordre :
+1) Cite les informations les plus importantes ecrites sur le document (maximum
+   8 : noms, dates, numeros, montants, adresses, durees de validite...). Une
+   information par phrase courte. Si le document contient plus de 8 donnees,
+   garde seulement les plus utiles pour la personne.
+2) Explique ensuite en 2-3 phrases ce qu'est ce document et ce que la personne
+   doit faire.
+Reste concis : la reponse totale doit rester courte, elle sera lue a voix haute.
+Si le document est illisible ou n'est pas exploitable, dis-le honnêtement au
+lieu d'inventer une information.`;
 
 /** Réécrit un texte administratif français en français très simple. */
 export async function simplify(textFr: string): Promise<string> {
@@ -83,9 +90,13 @@ export async function answerQuestion(questionFr: string): Promise<string> {
   }
 }
 
-/** Explique en français très simple le contenu d'une photo de document. */
+/**
+ * Extrait les informations et explique le contenu d'un document (photo ou
+ * PDF) en français très simple. `mimeType` peut être une image (image/*)
+ * ou "application/pdf" — Gemini comprend les deux nativement.
+ */
 export async function readDocumentImage(
-  imageBuffer: Buffer,
+  fileBuffer: Buffer,
   mimeType: string,
 ): Promise<string> {
   try {
@@ -98,13 +109,24 @@ export async function readDocumentImage(
           content: [
             {
               type: "text",
-              text: "Explique ce document en français très simple.",
+              text: "Lis ce document et explique-le en français très simple.",
             },
-            { type: "file", mediaType: mimeType, data: imageBuffer },
+            { type: "file", mediaType: mimeType, data: fileBuffer },
           ],
         },
       ],
       temperature: 0.3,
+      // Garde-fou : un document tres dense ne doit pas produire un texte si
+      // long que la synthese vocale (segment par segment) prenne des minutes.
+      // thinkingBudget: 0 desactive le raisonnement interne de Gemini 2.5,
+      // qui sinon consomme une partie du budget maxOutputTokens avant meme
+      // de generer le texte visible (reponse tronquee sinon).
+      maxOutputTokens: 700,
+      providerOptions: {
+        google: {
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      },
     });
     return text.trim();
   } catch (err) {

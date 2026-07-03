@@ -35,9 +35,9 @@ class Translator:
         sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text.strip()) if s.strip()]
         return sentences or [text.strip()]
 
-    def _translate_sentence(self, sentence: str, src: str, tgt: str) -> str:
+    def _translate_batch(self, sentences: list[str], src: str, tgt: str) -> list[str]:
         self.tokenizer.src_lang = NLLB_LANG_CODES[src]
-        inputs = self.tokenizer(sentence, return_tensors="pt").to(self.device)
+        inputs = self.tokenizer(sentences, return_tensors="pt", padding=True).to(self.device)
         forced_bos_token_id = self.tokenizer.convert_tokens_to_ids(NLLB_LANG_CODES[tgt])
         with torch.no_grad():
             generated = self.model.generate(
@@ -46,13 +46,16 @@ class Translator:
                 num_beams=4,
                 max_length=256,
             )
-        return self.tokenizer.batch_decode(generated, skip_special_tokens=True)[0]
+        return self.tokenizer.batch_decode(generated, skip_special_tokens=True)
 
     def translate(self, text: str, src: str, tgt: str) -> str:
         if src not in NLLB_LANG_CODES or tgt not in NLLB_LANG_CODES:
             raise ValueError(f"Langue non supportee: src={src}, tgt={tgt}")
         sentences = self._split_sentences(text)
-        translated = [self._translate_sentence(s, src, tgt) for s in sentences]
+        # Un seul appel batch (au lieu d'une boucle par phrase) : sur CPU, le
+        # cout d'un forward/beam-search batche est tres inferieur a N appels
+        # sequentiels (amorti sur tout le batch au lieu d'etre paye N fois).
+        translated = self._translate_batch(sentences, src, tgt)
         return " ".join(translated)
 
 

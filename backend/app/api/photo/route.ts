@@ -6,6 +6,12 @@ const langSchema = z.enum(["dyu", "mos"], {
   message: "lang doit être 'dyu' ou 'mos'",
 });
 
+const MAX_FILE_BYTES = 15 * 1024 * 1024;
+
+function isAcceptedType(mimeType: string): boolean {
+  return mimeType.startsWith("image/") || mimeType === "application/pdf";
+}
+
 export async function POST(request: NextRequest) {
   let form: FormData;
   try {
@@ -24,10 +30,22 @@ export async function POST(request: NextRequest) {
 
   const file = form.get("file");
   if (!(file instanceof Blob)) {
-    return Response.json({ error: "Fichier image manquant (champ 'file')." }, { status: 400 });
+    return Response.json(
+      { error: "Fichier manquant (champ 'file'), image ou PDF." },
+      { status: 400 },
+    );
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    return Response.json({ error: "Fichier trop volumineux (15 Mo maximum)." }, { status: 400 });
   }
 
   const mimeType = file.type || "image/jpeg";
+  if (!isAcceptedType(mimeType)) {
+    return Response.json(
+      { error: "Format non supporté : envoyez une image ou un PDF." },
+      { status: 400 },
+    );
+  }
   const buffer = Buffer.from(await file.arrayBuffer());
 
   try {
