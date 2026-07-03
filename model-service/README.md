@@ -4,7 +4,7 @@ emoji: 🗣️
 colorFrom: blue
 colorTo: green
 sdk: docker
-app_port: 8000
+app_port: 7860
 ---
 
 # model-service
@@ -37,5 +37,8 @@ uvicorn app.main:app --reload --port 8000
 
 ## Deploiement sur Hugging Face Spaces
 
-Ce dossier peut etre pousse tel quel comme un Space Docker (le header YAML
-ci-dessus est deja configure pour `sdk: docker` et `app_port: 8000`).
+Ce dossier est deploye comme un Space Docker (header YAML ci-dessus :
+`sdk: docker`, `app_port: 7860`), automatiquement a chaque push sur `main`
+via le workflow `.github/workflows/deploy-model-service.yml` (voir la racine
+du monorepo). Le Space lit `ALLOWED_ORIGINS` et `HF_TOKEN` depuis ses propres
+"Secrets" (Settings > Variables and secrets du Space), pas depuis ce repo.
