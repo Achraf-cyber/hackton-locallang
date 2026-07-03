@@ -22,6 +22,29 @@ export class LLMError extends Error {
   }
 }
 
+/**
+ * Cherche un statusCode HTTP dans une erreur du Vercel AI SDK, en descendant
+ * dans les causes imbriquées (AI_RetryError -> AI_APICallError -> ...).
+ */
+function findStatusCode(err: unknown, depth = 0): number | undefined {
+  if (!err || typeof err !== "object" || depth > 5) return undefined;
+  const anyErr = err as Record<string, unknown>;
+  if (typeof anyErr.statusCode === "number") return anyErr.statusCode;
+  if (Array.isArray(anyErr.errors)) {
+    for (const nested of anyErr.errors) {
+      const found = findStatusCode(nested, depth + 1);
+      if (found) return found;
+    }
+  }
+  if (anyErr.cause) return findStatusCode(anyErr.cause, depth + 1);
+  return undefined;
+}
+
+/** Vrai si l'erreur (ou une de ses causes imbriquées) est un 429 (quota Gemini). */
+export function isRateLimitError(err: unknown): boolean {
+  return findStatusCode(err) === 429;
+}
+
 function model(): LanguageModel {
   const env = getEnv();
   const provider = createGoogleGenerativeAI({ apiKey: env.GEMINI_API_KEY });

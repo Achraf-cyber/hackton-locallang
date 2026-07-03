@@ -12,6 +12,7 @@
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 import type { Context } from "grammy";
 import { getEnv } from "../env";
+import { isRateLimitError } from "../llm";
 import type { LocalLang } from "../modelService";
 import { answerInLanguage, explainPhoto, voiceToVoice } from "../orchestrator";
 
@@ -103,9 +104,10 @@ export function getBot(): Bot {
   ): Promise<void> {
     await ctx.api.deleteMessage(ctx.chat!.id, ackMessageId).catch(() => {});
     await ctx.reply(
-      "😕 Désolé, une erreur est survenue. Le service est peut-être indisponible, réessayez dans un instant.",
+      isRateLimitError(err)
+        ? "⏳ Trop de demandes en ce moment (limite du service IA atteinte). Réessayez dans quelques minutes."
+        : "😕 Désolé, une erreur est survenue. Le service est peut-être indisponible, réessayez dans un instant.",
     );
-     
     console.error("[telegram]", err);
   }
 

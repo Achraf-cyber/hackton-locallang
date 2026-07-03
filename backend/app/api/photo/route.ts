@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { handleApiError } from "../../../lib/apiError";
 import { explainPhoto } from "../../../lib/orchestrator";
 
 const langSchema = z.enum(["dyu", "mos"], {
@@ -56,6 +57,6 @@ export async function POST(request: NextRequest) {
       timings: out.timings,
     });
   } catch (err) {
-    return Response.json({ error: (err as Error).message }, { status: 502 });
+    return handleApiError("api/photo", err);
   }
 }

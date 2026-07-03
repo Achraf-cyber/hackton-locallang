@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { handleApiError } from "../../../lib/apiError";
 import { answerInLanguage, explainDocument } from "../../../lib/orchestrator";
 
 const bodySchema = z.object({
@@ -36,6 +37,6 @@ export async function POST(request: NextRequest) {
       timings: out.timings,
     });
   } catch (err) {
-    return Response.json({ error: (err as Error).message }, { status: 502 });
+    return handleApiError("api/text", err);
   }
 }
