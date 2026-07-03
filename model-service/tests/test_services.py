@@ -31,6 +31,19 @@ def test_tts_merges_bare_numbered_list_markers():
     assert all(len(s) > 5 for s in segments), segments
 
 
+def test_tts_softens_internal_sentence_ends_only():
+    """Regression : VITS traite chaque ponctuation finale comme une fin de
+    discours (intonation descendante + pause longue), meme au milieu d'un
+    texte. On adoucit donc les points internes en virgule et on garde
+    uniquement la ponctuation finale du segment."""
+    tts = TTS()
+    result = tts._soften_internal_sentence_ends("Phrase un. Phrase deux ! Phrase trois ?")
+    assert result == "Phrase un, Phrase deux , Phrase trois ?"
+
+    # Une seule phrase : rien a adoucir.
+    assert tts._soften_internal_sentence_ends("Une seule phrase.") == "Une seule phrase."
+
+
 @pytest.mark.slow
 def test_tts_speak_numbered_list_real():
     """Reproduit le crash original avec une vraie synthese VITS."""

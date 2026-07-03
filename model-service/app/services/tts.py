@@ -19,6 +19,7 @@ MIN_SEGMENT_LETTERS = 4
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _LETTERS_RE = re.compile(r"[^a-zA-ZÀ-ÖØ-öø-ÿ]")
+_SENTENCE_END_RE = re.compile(r"[.!?]+")
 
 
 class TTS:
@@ -71,8 +72,26 @@ class TTS:
                 merged.append(buffer)
         return merged
 
+    def _soften_internal_sentence_ends(self, text: str) -> str:
+        """VITS (MMS-TTS) est entraine phrase par phrase : il plaque une
+        cadence "fin de discours" (intonation descendante + pause longue) sur
+        CHAQUE ponctuation finale, meme au milieu d'un texte a lire d'une
+        traite. On adoucit donc les points/! /? internes (tous sauf le
+        dernier) en virgule, pour que seule la toute fin du segment sonne
+        comme une fin ; les phrases intermediaires gardent juste une pause
+        courte, plus naturelle a l'oreille."""
+        matches = list(_SENTENCE_END_RE.finditer(text))
+        if len(matches) <= 1:
+            return text
+        chars = list(text)
+        for m in matches[:-1]:
+            start, end = m.span()
+            chars[start:end] = [","]
+        return "".join(chars)
+
     def _synthesize_segment(self, text: str, lang: str) -> np.ndarray:
         model, tokenizer = self._get_model(lang)
+        text = self._soften_internal_sentence_ends(text)
         inputs = tokenizer(text, return_tensors="pt").to(self.device)
         with torch.no_grad():
             output = model(**inputs).waveform

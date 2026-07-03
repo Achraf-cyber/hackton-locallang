@@ -29,7 +29,7 @@ async function timed<T>(
     const ms = Math.round(performance.now() - start);
     timings[label] = ms;
     steps.push(label);
-    // eslint-disable-next-line no-console
+     
     console.log(`[orchestrator] ${label}: ${ms}ms`);
   }
 }
