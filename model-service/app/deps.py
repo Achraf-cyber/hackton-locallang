@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: list[str] = ["*"]
 
     # Voir app/services/asr.py pour le detail des backends.
-    ASR_BACKEND: Literal["local", "hf_api", "omnilingual", "omnilingual_ctc"] = "local"
+    ASR_BACKEND: Literal["local", "hf_api", "omnilingual", "omnilingual_ctc", "omnilingual_llm"] = "local"
     TRANSLATION_BACKEND: Literal["nllb", "afrimt5"] = "nllb"
     TTS_BACKEND_DYU: Literal["mms", "omnivoice"] = "mms"
     HF_TOKEN: str | None = None

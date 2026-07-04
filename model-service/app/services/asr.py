@@ -10,12 +10,15 @@ Trois backends, choisis par Settings.ASR_BACKEND :
   utilise donc openai/whisper-large-v3 a la place, qui NE supporte PAS
   officiellement le Dioula ni le Moore (~99 langues entrainees, dyu/mos
   absentes) : fiable seulement pour lang="fra", best-effort pour dyu/mos.
-- "omnilingual" : Meta Omnilingual ASR (2025), couvre nativement dyu/mos
-  (verifie via lang_ids.py du modele). Necessite le paquet omnilingual-asr
-  (fairseq2 + fairseq2n), qui n'a AUCUN wheel Windows -- fonctionne
-  uniquement sous Linux/WSL. L'import est fait en lazy pour ne pas casser
-  les backends "local"/"hf_api" sur une machine Windows sans ce paquet.
-Le contrat de transcribe(audio_path, lang) est identique dans les trois cas.
+- "omnilingual" / "omnilingual_ctc" / "omnilingual_llm" : Meta Omnilingual ASR
+  (2025), couvre nativement dyu/mos (verifie via lang_ids.py du modele) --
+  respectivement omniASR_CTC_300M_v2, omniASR_CTC_1B, omniASR_LLM_7B (le plus
+  gros et le plus precis, utilise en prod -- voir model-service/Dockerfile).
+  Necessite le paquet omnilingual-asr (fairseq2 + fairseq2n), qui n'a AUCUN
+  wheel Windows -- fonctionne uniquement sous Linux/WSL. L'import est fait en
+  lazy pour ne pas casser les backends "local"/"hf_api" sur une machine
+  Windows sans ce paquet.
+Le contrat de transcribe(audio_path, lang) est identique dans tous les cas.
 """
 
 import logging
@@ -41,6 +44,7 @@ MMS_LANG_CODES = {
 
 OMNILINGUAL_MODEL_CARD = "omniASR_CTC_300M_v2"
 OMNILINGUAL_CTC_MODEL_CARD = "omniASR_CTC_1B"
+OMNILINGUAL_LLM_MODEL_CARD = "omniASR_LLM_7B"
 OMNILINGUAL_LANG_CODES = {
     "dyu": "dyu_Latn",
     "mos": "mos_Latn",
@@ -63,10 +67,14 @@ class ASR:
             self._client = InferenceClient(model=HF_API_MODEL_NAME, token=settings.HF_TOKEN)
             return
 
-        if self.backend in ("omnilingual", "omnilingual_ctc"):
+        if self.backend in ("omnilingual", "omnilingual_ctc", "omnilingual_llm"):
             from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
 
-            model_card = OMNILINGUAL_CTC_MODEL_CARD if self.backend == "omnilingual_ctc" else OMNILINGUAL_MODEL_CARD
+            model_card = {
+                "omnilingual": OMNILINGUAL_MODEL_CARD,
+                "omnilingual_ctc": OMNILINGUAL_CTC_MODEL_CARD,
+                "omnilingual_llm": OMNILINGUAL_LLM_MODEL_CARD,
+            }[self.backend]
             self._omni_pipeline = ASRInferencePipeline(model_card=model_card)
             return
 
@@ -133,7 +141,7 @@ class ASR:
         if self.backend == "hf_api":
             return self._transcribe_hf_api(audio_path, lang)
 
-        if self.backend in ("omnilingual", "omnilingual_ctc"):
+        if self.backend in ("omnilingual", "omnilingual_ctc", "omnilingual_llm"):
             return self._transcribe_omnilingual(audio_path, lang)
 
         self._set_lang(lang)
