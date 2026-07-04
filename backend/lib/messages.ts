@@ -67,6 +67,20 @@ export const ACTION_CHAT: Trilingual = {
   fr: "💬 Poser une question",
 };
 
+/**
+ * Texte audio énumérant les 3 boutons du menu d'actions, DANS L'ORDRE où
+ * `actionKeyboard()` les affiche (voir bot.ts). Les usagers dyu/mos ciblés
+ * ne lisent pas l'alphabet latin : l'audio doit dire explicitement "premier
+ * bouton = X, deuxième = Y..." pour qu'ils sachent quel bouton toucher sans
+ * avoir à lire son libellé. Réutilise les libellés déjà traduits/relus
+ * (aucune nouvelle traduction, donc aucun nouveau risque de contresens).
+ */
+export function actionMenuAudioText(lang: LocalLang): string {
+  return [t(ACTION_MENU, lang), t(ACTION_EXPLAIN_DOC, lang), t(ACTION_GOV_DOC, lang), t(ACTION_CHAT, lang)].join(
+    ". ",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Confirmations d'action
 // ---------------------------------------------------------------------------
@@ -116,6 +130,15 @@ export function govDocLabel(key: GovDocKey, lang: LocalLang | "fr"): string {
 /** Retourne l'URL du document. */
 export function govDocUrl(key: GovDocKey): string {
   return GOV_DOCS.find((d) => d.key === key)?.url ?? "";
+}
+
+/**
+ * Texte audio énumérant les 6 documents du sous-menu, DANS L'ORDRE où
+ * `govDocKeyboard()` les affiche (même ordre que GOV_DOCS). Même principe
+ * que `actionMenuAudioText` : réutilise les libellés déjà traduits.
+ */
+export function govDocMenuAudioText(lang: LocalLang): string {
+  return [t(GOV_DOC_MENU, lang), ...GOV_DOCS.map((d) => govDocLabel(d.key, lang))].join(". ");
 }
 
 // ---------------------------------------------------------------------------

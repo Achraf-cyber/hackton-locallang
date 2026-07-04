@@ -7,6 +7,7 @@
  *   POST /transcribe (multipart audio + lang) -> { text }
  *   POST /to-french   (JSON texte langue locale) -> { text_fr }
  *   POST /localize    (JSON texte fr + lang)   -> { translated, audio_url }
+ *   POST /speak       (JSON texte DÉJÀ en langue locale + lang) -> { audio_url }
  */
 
 import { getEnv } from "./env";
@@ -112,4 +113,29 @@ export async function localize(
   if (!res.ok) await readError(res);
   const data = (await res.json()) as { translated: string; audio_url: string };
   return { translated: data.translated, audioUrl: toAbsoluteAudioUrl(data.audio_url) };
+}
+
+/**
+ * Synthèse vocale PURE (pas de traduction) pour du texte déjà écrit dans la
+ * langue cible. À utiliser pour les messages d'interface fixes (menus,
+ * accueil...) déjà rédigés/relus en dyu/mos — surtout PAS `localize()`, qui
+ * traduit systématiquement depuis le français et produirait un résultat
+ * incorrect si le texte d'entrée est déjà en langue locale.
+ */
+export async function speak(text: string, lang: LocalLang): Promise<{ audioUrl: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, lang }),
+    });
+  } catch (err) {
+    throw new ModelServiceError(
+      `Impossible de joindre le service modèles (/speak): ${(err as Error).message}`,
+    );
+  }
+  if (!res.ok) await readError(res);
+  const data = (await res.json()) as { audio_url: string };
+  return { audioUrl: toAbsoluteAudioUrl(data.audio_url) };
 }

@@ -67,6 +67,15 @@ class ToFrenchResponse(BaseModel):
     text_fr: str
 
 
+class SpeakRequest(BaseModel):
+    text: str
+    lang: Literal["dyu", "mos"]
+
+
+class SpeakResponse(BaseModel):
+    audio_url: str
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -112,6 +121,26 @@ def localize(payload: LocalizeRequest) -> LocalizeResponse:
     logger.info("POST /localize lang=%s duration=%.3fs", payload.lang, elapsed)
 
     return LocalizeResponse(translated=translated, audio_url=f"/media/{filename}")
+
+
+@app.post("/speak", response_model=SpeakResponse)
+def speak(payload: SpeakRequest) -> SpeakResponse:
+    """Synthese vocale PURE, sans traduction : pour du texte deja ecrit dans
+    la langue cible (ex. messages d'interface fixes, ecrits/relus par un
+    locuteur natif). Ne PAS utiliser /localize pour ce cas : /localize
+    traduit systematiquement depuis le francais, ce qui produit un resultat
+    incorrect si le texte d'entree est deja en dyu/mos."""
+    start = time.perf_counter()
+
+    tts = TTS.get_instance()
+    filename = f"{uuid.uuid4()}.wav"
+    output_path = MEDIA_DIR / filename
+    tts.speak(payload.text, lang=payload.lang, output_path=str(output_path))
+
+    elapsed = time.perf_counter() - start
+    logger.info("POST /speak lang=%s duration=%.3fs", payload.lang, elapsed)
+
+    return SpeakResponse(audio_url=f"/media/{filename}")
 
 
 @app.post("/to-french", response_model=ToFrenchResponse)

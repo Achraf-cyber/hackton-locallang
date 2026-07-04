@@ -23,6 +23,22 @@ def test_localize_missing_lang(client):
     assert response.status_code == 422
 
 
+def test_speak_mocked(client):
+    response = client.post(
+        "/speak",
+        json={"text": "I bɛ cogo di ?", "lang": "dyu"},
+    )
+    assert response.status_code == 200
+    assert "audio_url" in response.json()
+    # /speak ne traduit jamais : aucune cle "translated" en sortie.
+    assert "translated" not in response.json()
+
+
+def test_speak_missing_lang(client):
+    response = client.post("/speak", json={"text": "I bɛ cogo di ?"})
+    assert response.status_code == 422
+
+
 def test_to_french_mocked(client):
     response = client.post(
         "/to-french",
