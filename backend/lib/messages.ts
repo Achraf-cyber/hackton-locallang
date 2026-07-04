@@ -17,6 +17,19 @@ export function t(catalog: Trilingual, lang: LocalLang | "fr"): string {
   return catalog[lang] ?? catalog.fr;
 }
 
+/**
+ * Comme `t()`, mais ajoute la traduction française entre parenthèses quand
+ * `lang` est une langue locale (dyu/mos) : la majorité des usagers ciblés ne
+ * lisent pas l'alphabet latin, mais certains lecteurs (agents relais,
+ * développeurs, contrôle qualité) veulent pouvoir vérifier le sens du
+ * message affiché sans avoir à le faire traduire séparément.
+ */
+export function tBilingual(catalog: Trilingual, lang: LocalLang | "fr"): string {
+  const local = t(catalog, lang);
+  if (lang === "fr") return local;
+  return `${local} (${catalog.fr})`;
+}
+
 // ---------------------------------------------------------------------------
 // /start — message d'accueil bilingue (Mooré + Dioula concaténés)
 // ---------------------------------------------------------------------------

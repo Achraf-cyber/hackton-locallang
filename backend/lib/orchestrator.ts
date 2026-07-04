@@ -18,7 +18,7 @@ import type { LocalLang } from "./modelService";
 import { localize, transcribe } from "./modelService";
 
 export interface OrchestratorResult {
-  result: { translated: string; audioUrl: string; transcript?: string };
+  result: { translated: string; audioUrl: string; transcript?: string; sourceFr: string };
   steps: string[];
   timings: Record<string, number>;
 }
@@ -52,7 +52,7 @@ export async function explainDocument(
   const simplified = await timed("simplify", steps, timings, () => simplify(textFr));
   const local = await timed("localize", steps, timings, () => localize(simplified, lang));
 
-  return { result: local, steps, timings };
+  return { result: { ...local, sourceFr: simplified }, steps, timings };
 }
 
 /** Question écrite (français ou langue locale) -> réponse simple + audio en langue locale. */
@@ -77,7 +77,7 @@ export async function answerInLanguage(
   // Étape 3 : Traduire et synthétiser la réponse en langue locale
   const local = await timed("localize", steps, timings, () => localize(answer, lang));
 
-  return { result: local, steps, timings };
+  return { result: { ...local, sourceFr: answer }, steps, timings };
 }
 
 /** Photo de document -> explication + audio en langue locale. */
@@ -94,7 +94,7 @@ export async function explainPhoto(
   );
   const local = await timed("localize", steps, timings, () => localize(explanation, lang));
 
-  return { result: local, steps, timings };
+  return { result: { ...local, sourceFr: explanation }, steps, timings };
 }
 
 /** Voix (français ou langue locale) -> réponse vocale (langue locale). */
@@ -138,7 +138,7 @@ export async function voiceToVoice(
   const local = await timed("localize", steps, timings, () => localize(answer, userLang));
 
   return {
-    result: { ...local, transcript: textFr },
+    result: { ...local, transcript: textFr, sourceFr: answer },
     steps,
     timings,
   };

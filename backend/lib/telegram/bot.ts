@@ -19,7 +19,6 @@ import type { Context } from "grammy";
 import { getEnv } from "../env";
 import { isRateLimitError } from "../llm";
 import type { LocalLang } from "../modelService";
-import { localize } from "../modelService";
 import { answerInLanguage, explainPhoto, voiceToVoice } from "../orchestrator";
 import { resolveUser, getChatContext } from "../identity";
 import { checkAndConsumeQuota, QUOTA_REACHED_MESSAGES } from "../quota";
@@ -27,6 +26,7 @@ import { prisma } from "../db";
 import { getCachedSpeechUrl } from "../audioCache";
 import {
   t,
+  tBilingual,
   WELCOME_BILINGUAL_TEXT,
   WELCOME_AUDIO_TEXT_MOS,
   WELCOME_AUDIO_TEXT_DYU,
@@ -207,33 +207,44 @@ async function checkQuotaOrReply(
   const quota = await checkAndConsumeQuota(dbUser);
   if (!quota.allowed) {
     const message = QUOTA_REACHED_MESSAGES[lang] ?? QUOTA_REACHED_MESSAGES.fr;
+    const messageBilingual = `${message} (${QUOTA_REACHED_MESSAGES.fr})`;
     await sendMenuAudio(ctx, "quota_reached", message, lang, "quota.wav");
-    await ctx.reply(message + "\n\nEnvoyez PAYER pour continuer aujourd'hui.");
+    await ctx.reply(messageBilingual + "\n\nEnvoyez PAYER pour continuer aujourd'hui.");
     return false;
   }
   return true;
 }
 
-/** Envoie le résultat (audio + texte en caption) et supprime l'ack. */
+const AUDIO_CAPTION_MAX_LENGTH = 1024;
+
+/** Envoie le résultat (audio + texte en caption, traduction fr entre parenthèses). */
 async function replyWithResult(
   ctx: Context,
   ackMessageId: number,
-  result: { translated: string; audioUrl: string }
+  result: { translated: string; audioUrl: string; sourceFr: string }
 ): Promise<void> {
+  const caption = `${result.translated} (${result.sourceFr})`;
   try {
     const audioBuffer = await downloadAudio(result.audioUrl);
-    await ctx.replyWithAudio(new InputFile(audioBuffer, "reponse.wav"), {
-      caption: result.translated,
-    });
+    if (caption.length <= AUDIO_CAPTION_MAX_LENGTH) {
+      await ctx.replyWithAudio(new InputFile(audioBuffer, "reponse.wav"), { caption });
+    } else {
+      // Légende Telegram limitée à 1024 caractères : si le fr ne rentre pas
+      // avec le texte local, on l'envoie dans un message séparé qui suit.
+      await ctx.replyWithAudio(new InputFile(audioBuffer, "reponse.wav"), {
+        caption: result.translated,
+      });
+      await ctx.reply(`(${result.sourceFr})`);
+    }
   } catch {
     // Si l'audio échoue, on renvoie le texte brut.
-    await ctx.reply(result.translated);
+    await ctx.reply(caption);
   } finally {
     await ctx.api.deleteMessage(ctx.chat!.id, ackMessageId).catch(() => {});
   }
 }
 
-/** Supprime l'ack et envoie le message d'erreur adapté. */
+/** Supprime l'ack et envoie le message d'erreur adapté (fr entre parenthèses). */
 async function replyWithError(
   ctx: Context,
   ackMessageId: number,
@@ -246,7 +257,7 @@ async function replyWithError(
   if (lang !== "fr") {
     await sendMenuAudio(ctx, isRateLimitError(err) ? "err_rate_limit" : "err_generic", message, lang, "erreur.wav");
   }
-  await ctx.reply(message);
+  await ctx.reply(tBilingual(catalog, lang));
   console.error("[telegram]", err);
 }
 
@@ -293,7 +304,7 @@ export function getBot(): Bot {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
     await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
-    await ctx.reply(t(ACTION_MENU, lang), {
+    await ctx.reply(tBilingual(ACTION_MENU, lang), {
       reply_markup: actionKeyboard(lang),
     });
   });
@@ -303,7 +314,7 @@ export function getBot(): Bot {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
     await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
-    await ctx.reply(t(GOV_DOC_MENU, lang), {
+    await ctx.reply(tBilingual(GOV_DOC_MENU, lang), {
       reply_markup: govDocKeyboard(lang),
     });
   });
@@ -355,7 +366,7 @@ export function getBot(): Bot {
 
     // Afficher le menu des actions dans la langue choisie (audio d'abord)
     await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
-    await ctx.reply(t(ACTION_MENU, lang), {
+    await ctx.reply(tBilingual(ACTION_MENU, lang), {
       reply_markup: actionKeyboard(lang),
     });
   });
@@ -369,14 +380,14 @@ export function getBot(): Bot {
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(EXPLAIN_DOC_PROMPT, lang ?? "fr");
     if (lang) await sendMenuAudio(ctx, "explain_doc_prompt", message, lang, "invite.wav");
-    await ctx.reply(message);
+    await ctx.reply(tBilingual(EXPLAIN_DOC_PROMPT, lang ?? "fr"));
   });
 
   bot.callbackQuery("action:gov_doc", async (ctx) => {
     await ctx.answerCallbackQuery();
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     if (lang) await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
-    await ctx.reply(t(GOV_DOC_MENU, lang ?? "fr"), {
+    await ctx.reply(tBilingual(GOV_DOC_MENU, lang ?? "fr"), {
       reply_markup: govDocKeyboard(lang ?? "dyu"),
     });
   });
@@ -386,7 +397,7 @@ export function getBot(): Bot {
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(CHAT_PROMPT, lang ?? "fr");
     if (lang) await sendMenuAudio(ctx, "chat_prompt", message, lang, "invite.wav");
-    await ctx.reply(message);
+    await ctx.reply(tBilingual(CHAT_PROMPT, lang ?? "fr"));
   });
 
   // -------------------------------------------------------------------------
@@ -405,22 +416,22 @@ export function getBot(): Bot {
     // 1. Générer et envoyer un audio expliquant la situation (sans l'URL),
     // AVANT le texte : ce message ne porte pas de boutons, mais on garde le
     // même ordre (audio -> texte) pour rester cohérent sur tout le bot.
-    try {
-      const ttsText = t(GOV_DOC_COMING_SOON_TTS, lang);
-      const localLang: LocalLang = lang === "fr" ? "dyu" : lang;
-      const result = await localize(ttsText, localLang);
-      const audioBuffer = await downloadAudio(result.audioUrl);
-      await ctx.replyWithAudio(
-        new InputFile(audioBuffer, "info_document.wav"),
-        { caption: result.translated }
-      );
-    } catch (err) {
-      console.error("[telegram] govdoc TTS failed:", err);
-    }
+    // Le texte est DÉJÀ écrit en langue locale (catalogue GOV_DOC_COMING_SOON_TTS)
+    // -> sendMenuAudio()/speak(), jamais localize() qui traduirait à tort
+    // depuis le français (même bug que l'audio d'accueil, corrigé ici aussi).
+    const localLang: LocalLang = lang === "fr" ? "dyu" : lang;
+    await sendMenuAudio(
+      ctx,
+      "gov_doc_coming_soon",
+      t(GOV_DOC_COMING_SOON_TTS, localLang),
+      localLang,
+      "info_document.wav"
+    );
 
-    // 2. Envoyer le texte d'affichage avec le lien
+    // 2. Envoyer le texte d'affichage avec le lien (fr entre parenthèses)
     const displayText =
-      `*${docName}*\n\n${t(GOV_DOC_COMING_SOON_DISPLAY, lang)}\n${url}`;
+      `*${docName}${lang !== "fr" ? ` (${govDocLabel(key, "fr")})` : ""}*\n\n` +
+      `${tBilingual(GOV_DOC_COMING_SOON_DISPLAY, lang)}\n${url}`;
     await ctx.reply(displayText, { parse_mode: "Markdown" });
   });
 
@@ -433,7 +444,7 @@ export function getBot(): Bot {
     if (!lang) return askLanguage(ctx);
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
-    const ack = await ctx.reply(t(ACK_LISTENING, lang));
+    const ack = await ctx.reply(tBilingual(ACK_LISTENING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());
       const history = await getChatContext(dbUser.id);
@@ -475,7 +486,7 @@ export function getBot(): Bot {
     if (!lang) return askLanguage(ctx);
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
-    const ack = await ctx.reply(t(ACK_READING, lang));
+    const ack = await ctx.reply(tBilingual(ACK_READING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());
       const largest = ctx.message.photo.at(-1)!;
@@ -517,12 +528,12 @@ export function getBot(): Bot {
     if (!mimeType.startsWith("image/") && mimeType !== "application/pdf") {
       const message = t(ERR_WRONG_FILE, lang);
       await sendMenuAudio(ctx, "err_wrong_file", message, lang, "erreur.wav");
-      await ctx.reply(message);
+      await ctx.reply(tBilingual(ERR_WRONG_FILE, lang));
       return;
     }
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
-    const ack = await ctx.reply(t(ACK_READING, lang));
+    const ack = await ctx.reply(tBilingual(ACK_READING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());
       const buffer = await downloadTelegramFile(
@@ -590,14 +601,14 @@ export function getBot(): Bot {
         );
       } catch (err) {
         console.error("[telegram] paiement simulé échoué:", err);
-        await ctx.reply(t(ERR_GENERIC, lang));
+        await ctx.reply(tBilingual(ERR_GENERIC, lang));
       }
       return;
     }
 
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
-    const ack = await ctx.reply(t(ACK_THINKING, lang));
+    const ack = await ctx.reply(tBilingual(ACK_THINKING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());
       const history = await getChatContext(dbUser.id);
