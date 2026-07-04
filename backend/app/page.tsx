@@ -12,6 +12,8 @@ interface ApiResult {
   audioUrl?: string;
   transcript?: string;
   error?: string;
+  message?: string;
+  payUrl?: string;
 }
 
 const STATUS_MESSAGES = [
@@ -39,13 +41,53 @@ async function postJson(url: string, body: unknown): Promise<ApiResult> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    credentials: "include",
   });
   return (await res.json()) as ApiResult;
 }
 
 async function postForm(url: string, form: FormData): Promise<ApiResult> {
-  const res = await fetch(url, { method: "POST", body: form });
+  const res = await fetch(url, { method: "POST", body: form, credentials: "include" });
   return (await res.json()) as ApiResult;
+}
+
+const WEB_USER_ID_STORAGE_KEY = "lldp_web_user_id";
+
+/**
+ * Enregistre l'utilisateur web par email (pose un cookie de session signé
+ * côté serveur) afin de donner une identité stable pour le suivi de quota et
+ * le paiement. Sans cet enregistrement, l'usager reste anonyme et son quota
+ * n'est pas suivi (voir commentaire dans app/api/text/route.ts). L'userId
+ * renvoyé est aussi gardé en localStorage pour pouvoir appeler /api/pay
+ * (qui a besoin d'un userId explicite, indépendamment du cookie).
+ */
+async function registerEmail(email: string): Promise<string | null> {
+  const res = await fetch("/api/register-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+    credentials: "include",
+  });
+  const data = (await res.json()) as { userId?: string };
+  if (data.userId) {
+    localStorage.setItem(WEB_USER_ID_STORAGE_KEY, data.userId);
+    return data.userId;
+  }
+  return null;
+}
+
+/** MOCK — voir app/api/pay/route.ts. Achète 10 requêtes de plus pour 100 FCFA. */
+async function payForCredits(): Promise<{ status: string; paidCreditsLeft: number } | null> {
+  const userId = localStorage.getItem(WEB_USER_ID_STORAGE_KEY);
+  if (!userId) return null;
+  const res = await fetch("/api/pay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, amountFcfa: 100, creditsRequested: 10 }),
+    credentials: "include",
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as { status: string; paidCreditsLeft: number };
 }
 
 function formatSeconds(s: number): string {
@@ -63,6 +105,13 @@ export default function Home() {
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [result, setResult] = useState<ApiResult | null>(null);
   const [lastAction, setLastAction] = useState<(() => void) | null>(null);
+  const [payingForCredits, setPayingForCredits] = useState(false);
+  // Lazy initializer (pas un effect) : simple lecture synchrone du
+  // localStorage, aucun abonnement externe requis.
+  const [showEmailModal, setShowEmailModal] = useState(
+    () => typeof window !== "undefined" && !localStorage.getItem(WEB_USER_ID_STORAGE_KEY),
+  );
+  const [emailInput, setEmailInput] = useState("");
   const [textInput, setTextInput] = useState("");
   const [docPreview, setDocPreview] = useState<string | null>(null);
   const [docName, setDocName] = useState<string | null>(null);
@@ -92,6 +141,19 @@ export default function Home() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
+
+  async function handlePayForCredits() {
+    setPayingForCredits(true);
+    try {
+      const res = await payForCredits();
+      if (res?.status === "confirmed") {
+        setResult(null);
+        if (lastAction) lastAction();
+      }
+    } finally {
+      setPayingForCredits(false);
+    }
+  }
 
   async function run(action: () => Promise<ApiResult>) {
     setStatusIndex(0);
@@ -408,11 +470,22 @@ export default function Home() {
 
             {result?.error && (
               <div className={styles.errorBox}>
-                <p>😕 {result.error}</p>
-                {lastAction && (
-                  <button type="button" className={styles.bigButton} onClick={lastAction}>
-                    Réessayer
+                <p>😕 {result.error === "quota_reached" ? result.message : result.error}</p>
+                {result.error === "quota_reached" ? (
+                  <button
+                    type="button"
+                    className={styles.payButton}
+                    disabled={payingForCredits}
+                    onClick={handlePayForCredits}
+                  >
+                    {payingForCredits ? "⏳ Paiement en cours..." : "💳 Payer 100 FCFA pour 10 requêtes de plus"}
                   </button>
+                ) : (
+                  lastAction && (
+                    <button type="button" className={styles.bigButton} onClick={lastAction}>
+                      Réessayer
+                    </button>
+                  )
                 )}
               </div>
             )}
@@ -488,6 +561,51 @@ export default function Home() {
           </section>
         )}
       </main>
+
+      {showEmailModal && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalContent}>
+            <h3 className={styles.modalTitle}>Quotas gratuits</h3>
+            <p className={styles.modalText}>
+              Entrez votre email pour suivre votre quota gratuit (optionnel, laissez vide pour rester anonyme) :
+            </p>
+            <input
+              type="email"
+              placeholder="votre@email.com"
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              className={styles.modalInput}
+              autoFocus
+            />
+            <div className={styles.modalActions}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmailModal(false);
+                  localStorage.setItem(WEB_USER_ID_STORAGE_KEY, "anonymous_declined");
+                }}
+                className={styles.modalCancel}
+              >
+                Passer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmailModal(false);
+                  if (emailInput && emailInput.includes("@")) {
+                    registerEmail(emailInput).catch(() => {});
+                  } else {
+                    localStorage.setItem(WEB_USER_ID_STORAGE_KEY, "anonymous_declined");
+                  }
+                }}
+                className={styles.modalSubmit}
+              >
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

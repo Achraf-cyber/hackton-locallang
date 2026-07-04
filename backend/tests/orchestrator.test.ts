@@ -4,11 +4,12 @@ vi.mock("../lib/llm", () => ({
   simplify: vi.fn(async () => "texte simplifié"),
   answerQuestion: vi.fn(async () => "réponse simple"),
   readDocumentImage: vi.fn(async () => "explication du document"),
+  translateInputToFrench: vi.fn(async () => "texte français"),
+  resolveDualTranscription: vi.fn(async () => "texte français arbitré"),
 }));
 
 vi.mock("../lib/modelService", () => ({
   localize: vi.fn(async () => ({ translated: "TRAD", audioUrl: "http://x/a.wav" })),
-  toFrench: vi.fn(async () => ({ textFr: "texte français" })),
   transcribe: vi.fn(async () => ({ text: "texte transcrit" })),
 }));
 
@@ -39,12 +40,20 @@ describe("orchestrator.explainDocument", () => {
 });
 
 describe("orchestrator.voiceToVoice", () => {
-  it("enchaîne transcribe -> toFrench -> answer -> localize", async () => {
+  it("enchaîne transcribe (dual) -> resolveDualTranscription -> answer -> localize", async () => {
     const out = await voiceToVoice(Buffer.from([1, 2, 3]), "a.webm", "mos");
 
-    expect(modelService.transcribe).toHaveBeenCalledOnce();
-    expect(modelService.toFrench).toHaveBeenCalledWith("texte transcrit", "mos");
-    expect(llm.answerQuestion).toHaveBeenCalledWith("texte français");
-    expect(out.result.transcript).toBe("texte transcrit");
+    // Une transcription dans la langue locale ET une en français, en parallèle.
+    expect(modelService.transcribe).toHaveBeenCalledTimes(2);
+    expect(modelService.transcribe).toHaveBeenCalledWith(expect.any(Buffer), "a.webm", "mos");
+    expect(modelService.transcribe).toHaveBeenCalledWith(expect.any(Buffer), "a.webm", "fra");
+
+    expect(llm.resolveDualTranscription).toHaveBeenCalledWith(
+      "texte transcrit",
+      "texte transcrit",
+      "mos",
+    );
+    expect(llm.answerQuestion).toHaveBeenCalledWith("texte français arbitré", undefined);
+    expect(out.result.transcript).toBe("texte français arbitré");
   });
 });

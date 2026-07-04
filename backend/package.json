@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.8",
+    "@prisma/client": "^6.19.3",
     "@vercel/functions": "^3.7.5",
     "ai": "^7.0.14",
     "grammy": "^1.44.0",
@@ -27,6 +28,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "prisma": "^6.19.3",
     "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.9"

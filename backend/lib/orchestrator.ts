@@ -6,9 +6,16 @@
  * timings } pour alimenter l'affichage "détails techniques" côté client.
  */
 
-import { answerQuestion, readDocumentImage, simplify } from "./llm";
+import {
+  answerQuestion,
+  readDocumentImage,
+  simplify,
+  translateInputToFrench,
+  resolveDualTranscription,
+} from "./llm";
+import type { ChatContextMessage } from "./llm";
 import type { LocalLang } from "./modelService";
-import { localize, toFrench, transcribe } from "./modelService";
+import { localize, transcribe } from "./modelService";
 
 export interface OrchestratorResult {
   result: { translated: string; audioUrl: string; transcript?: string };
@@ -48,15 +55,26 @@ export async function explainDocument(
   return { result: local, steps, timings };
 }
 
-/** Question française -> réponse simple + audio en langue locale. */
+/** Question écrite (français ou langue locale) -> réponse simple + audio en langue locale. */
 export async function answerInLanguage(
-  questionFr: string,
+  questionRaw: string,
   lang: LocalLang,
+  history?: ChatContextMessage[],
 ): Promise<OrchestratorResult> {
   const steps: string[] = [];
   const timings: Record<string, number> = {};
 
-  const answer = await timed("answer", steps, timings, () => answerQuestion(questionFr));
+  // Étape 1 : S'assurer que le texte est traduit en français
+  const questionFr = await timed("translate_input", steps, timings, () =>
+    translateInputToFrench(questionRaw, lang),
+  );
+
+  // Étape 2 : Répondre à la question avec le contexte de conversation
+  const answer = await timed("answer", steps, timings, () =>
+    answerQuestion(questionFr, history),
+  );
+
+  // Étape 3 : Traduire et synthétiser la réponse en langue locale
   const local = await timed("localize", steps, timings, () => localize(answer, lang));
 
   return { result: local, steps, timings };
@@ -79,26 +97,48 @@ export async function explainPhoto(
   return { result: local, steps, timings };
 }
 
-/** Voix (langue locale) -> réponse vocale (langue locale). */
+/** Voix (français ou langue locale) -> réponse vocale (langue locale). */
 export async function voiceToVoice(
   audioBuffer: Buffer,
   filename: string,
   userLang: LocalLang,
+  history?: ChatContextMessage[],
 ): Promise<OrchestratorResult> {
   const steps: string[] = [];
   const timings: Record<string, number> = {};
 
-  const { text } = await timed("transcribe", steps, timings, () =>
-    transcribe(audioBuffer, filename, userLang),
+  // Transcription en parallèle (langue locale et français)
+  const [resLocal, resFr] = await timed("transcribe_dual", steps, timings, () =>
+    Promise.all([
+      transcribe(audioBuffer, filename, userLang).catch((err) => {
+        console.error("Local ASR failed:", err);
+        return { text: "" };
+      }),
+      transcribe(audioBuffer, filename, "fra").catch((err) => {
+        console.error("French ASR failed:", err);
+        return { text: "" };
+      }),
+    ]),
   );
-  const { textFr } = await timed("toFrench", steps, timings, () =>
-    toFrench(text, userLang),
+
+  const localText = resLocal.text;
+  const frText = resFr.text;
+
+  // Arbitrage et traduction de l'audio en français
+  const textFr = await timed("resolve_transcription", steps, timings, () =>
+    resolveDualTranscription(localText, frText, userLang),
   );
-  const answer = await timed("answer", steps, timings, () => answerQuestion(textFr));
+
+  // Répondre à la question avec le contexte de conversation
+  const answer = await timed("answer", steps, timings, () =>
+    answerQuestion(textFr, history),
+  );
+
+  // Traduire et synthétiser la réponse en langue locale
   const local = await timed("localize", steps, timings, () => localize(answer, userLang));
 
   return {
-    result: { ...local, transcript: text },
+    result: { ...local, transcript: textFr },
     steps,
     timings,
   };

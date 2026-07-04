@@ -5,7 +5,8 @@ const envSchema = z.object({
   LLM_MODEL: z.string().min(1).default("google/gemini-2.5-flash"),
   MODEL_SERVICE_URL: z.string().url("MODEL_SERVICE_URL doit être une URL valide"),
   TELEGRAM_TOKEN: z.string().optional(),
-  // DATABASE_URL : ajouté au Jour 4 seulement
+  DATABASE_URL: z.string().min(1, "DATABASE_URL manquant"),
+  DAILY_FREE_LIMIT: z.coerce.number().int().positive().default(8),
 });
 
 export type Env = z.infer<typeof envSchema>;

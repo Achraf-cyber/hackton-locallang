@@ -23,7 +23,13 @@ function loadEnvLocal(): void {
   for (const line of content.split("\n")) {
     const match = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
     if (match && !(match[1] in process.env)) {
-      process.env[match[1]] = match[2].trim();
+      // Strip surrounding quotes (dotenv-compatible behavior)
+      let value = match[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      process.env[match[1]] = value;
     }
   }
 }

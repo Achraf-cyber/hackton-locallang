@@ -34,3 +34,29 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Modele economique
+
+Le schema Prisma (`prisma/schema.prisma`) est deja pret pour un vrai lancement
+commercial :
+
+- **Organization** : comptes entreprise/administration avec un plan, une
+  config de marque (`brandConfig`) et un glossaire specifique
+  (`glossaryOverrides`). Un `User` rattache a une `Organization`
+  (`organizationId`) n'est jamais soumis au quota gratuit journalier - la
+  facturation se fait alors au niveau de l'organisation (a batir separement).
+- **Quota gratuit** (`lib/quota.ts`) : chaque `User` sans organisation a droit
+  a `DAILY_FREE_LIMIT` requetes par jour (`requestsToday` / `quotaResetAt`,
+  reset a minuit UTC), puis peut consommer des credits payants
+  (`paidCreditsLeft`).
+- **Payment** : chaque achat de credits cree une ligne `Payment`
+  (`provider`, `amountFcfa`, `creditsGranted`, `status`). Le flux de credit
+  (creation -> confirmation -> incrementation de `paidCreditsLeft`) est reel
+  et deja branche sur `app/api/pay/route.ts` et le bouton de paiement de
+  `app/page.tsx`.
+
+Il ne manque qu'une **vraie integration de paiement mobile money** (Orange
+Money, Wave, CinetPay...) pour remplacer `app/api/pay/route.ts`, qui est
+actuellement un **mock** : il simule une confirmation immediate sans appel
+reseau reel. Le reste du modele (schema, quota, organisations) est concu pour
+ne pas changer lors de cette bascule.

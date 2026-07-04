@@ -9,8 +9,9 @@
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import { getEnv } from "./env";
+import type { LocalLang } from "./modelService";
 
 export class LLMError extends Error {
   constructor(
@@ -122,18 +123,81 @@ export async function simplify(textFr: string): Promise<string> {
   }
 }
 
-/** Répond en français très simple à une question d'usager. */
-export async function answerQuestion(questionFr: string): Promise<string> {
+export interface ChatContextMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** Répond en français très simple à une question d'usager avec historique. */
+export async function answerQuestion(
+  questionFr: string,
+  history?: ChatContextMessage[],
+): Promise<string> {
   try {
+    const messages: ModelMessage[] = [];
+    if (history && history.length > 0) {
+      messages.push(...history);
+    }
+    messages.push({ role: "user", content: questionFr });
+
     const { text } = await generateText({
       model: model(),
       system: ANSWER_SYSTEM,
-      prompt: questionFr,
+      messages,
       temperature: 0.3,
     });
     return text.trim();
   } catch (err) {
     throw new LLMError("Échec de la génération de la réponse.", err);
+  }
+}
+
+/** Détecte la langue de l'input et la traduit en français standard si nécessaire. */
+export async function translateInputToFrench(text: string, lang: LocalLang): Promise<string> {
+  const langLabel = lang === "dyu" ? "Dioula" : "Mooré";
+  try {
+    const { text: result } = await generateText({
+      model: model(),
+      system: `Tu es un traducteur intelligent. L'usager parle normalement en ${langLabel}. Si le texte suivant est rédigé en Dioula, Bambara, Mooré ou une autre langue locale africaine, traduis-le fidèlement en français standard simple. S'il est déjà en français, renvoie-le mot pour mot sans aucune modification ni ajout de politesse/commentaire.`,
+      prompt: text,
+      temperature: 0.1,
+    });
+    return result.trim();
+  } catch (err) {
+    console.error("Erreur lors de la traduction de l'input par Gemini, utilisation du texte brut:", err);
+    return text;
+  }
+}
+
+/**
+ * Arbitre entre deux transcriptions (l'une locale, l'autre française)
+ * et produit la version finale consolidée en français standard.
+ */
+export async function resolveDualTranscription(
+  localTranscript: string,
+  frenchTranscript: string,
+  lang: LocalLang,
+): Promise<string> {
+  const prompt = `Voici deux transcriptions possibles issues d'un même enregistrement audio d'un utilisateur d'Afrique de l'Ouest :
+1) Transcription par un modèle de langue locale (${lang === "dyu" ? "Dioula/Bambara" : "Mossi/Mooré"}) : "${localTranscript}"
+2) Transcription par un modèle de langue française : "${frenchTranscript}"
+
+Détermine laquelle des deux transcriptions est cohérente et correspond à un vrai discours (l'autre contenant probablement du charabia/bruit).
+- Si l'utilisateur a parlé en français (transcription 2 cohérente), renvoie directement cette version en français standard.
+- Si l'utilisateur a parlé en langue locale (transcription 1 cohérente), traduis-la fidèlement en français standard.
+Renvoie UNIQUEMENT le texte final traduit ou transcrit en français standard, sans aucun commentaire ou préambule.`;
+
+  try {
+    const { text } = await generateText({
+      model: model(),
+      system: "Tu es un arbitre et traducteur linguistique intelligent.",
+      prompt,
+      temperature: 0.1,
+    });
+    return text.trim();
+  } catch (err) {
+    console.error("Erreur lors de l'arbitrage des transcriptions:", err);
+    return frenchTranscript.length > localTranscript.length ? frenchTranscript : localTranscript;
   }
 }
 
