@@ -113,62 +113,64 @@ async function downloadAudio(audioUrl: string): Promise<Buffer> {
 }
 
 /**
- * Envoie l'audio (fire & forget, ne bloque jamais la réponse texte) pour un
- * message d'interface FIXE déjà écrit en langue locale, en le mettant en
- * cache (voir lib/audioCache.ts) pour ne payer le coût TTS qu'une fois par
- * (clé, langue). Utilisé pour les menus/boutons/erreurs — les usagers
- * dyu/mos ciblés ne lisent pas l'alphabet latin, ils ont besoin d'entendre
- * le contenu pour savoir quel bouton toucher.
+ * Envoie l'audio pour un message d'interface FIXE déjà écrit en langue
+ * locale, en le mettant en cache (voir lib/audioCache.ts) pour ne payer le
+ * coût TTS qu'une fois par (clé, langue). Utilisé pour les menus/boutons/
+ * erreurs — les usagers dyu/mos ciblés ne lisent pas l'alphabet latin, ils
+ * ont besoin d'ENTENDRE le contenu AVANT de voir les boutons pour savoir
+ * lequel toucher : on attend donc (await) la livraison de l'audio ici, et
+ * l'appelant doit envoyer le texte/clavier seulement APRÈS que cette
+ * fonction se soit résolue (jamais en parallèle / fire-and-forget).
  */
-function sendMenuAudio(
+async function sendMenuAudio(
   ctx: Context,
   key: string,
   text: string,
   lang: LocalLang,
   filename = "menu.wav"
-): void {
-  void (async () => {
-    try {
-      const audioUrl = await getCachedSpeechUrl(key, text, lang);
-      const buffer = await downloadAudio(audioUrl);
-      await ctx.replyWithVoice(new InputFile(buffer, filename));
-    } catch (err) {
-      console.error(`[telegram] audio menu "${key}" échouée:`, err);
-      // Silencieux — le texte affiché reste disponible pour les usagers
-      // qui savent lire.
-    }
-  })();
+): Promise<void> {
+  try {
+    const audioUrl = await getCachedSpeechUrl(key, text, lang);
+    const buffer = await downloadAudio(audioUrl);
+    await ctx.replyWithVoice(new InputFile(buffer, filename));
+  } catch (err) {
+    console.error(`[telegram] audio menu "${key}" échouée:`, err);
+    // Silencieux — le texte affiché reste disponible pour les usagers
+    // qui savent lire. On n'empêche pas l'envoi du texte qui suit.
+  }
 }
 
-/** Envoie le clavier de choix de langue + un clip audio dans chaque langue. */
+/**
+ * Envoie un clip audio dans chaque langue puis le clavier de choix de
+ * langue — l'audio doit arriver en premier (voir sendMenuAudio) pour que
+ * l'utilisateur l'entende avant de devoir choisir un bouton.
+ */
 async function sendLanguagePicker(ctx: Context): Promise<void> {
+  try {
+    // Texte DÉJÀ en mos/dyu -> speak() (jamais localize(), qui traduirait
+    // à tort depuis le français et produirait un résultat incohérent).
+    const [mosUrl, dyuUrl] = await Promise.all([
+      getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_MOS, "mos"),
+      getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_DYU, "dyu"),
+    ]);
+    const [mosBuf, dyuBuf] = await Promise.all([
+      downloadAudio(mosUrl),
+      downloadAudio(dyuUrl),
+    ]);
+    await ctx.replyWithVoice(new InputFile(mosBuf, "welcome_mos.wav"), {
+      caption: "🗣️ Mooré ⬅️",
+    });
+    await ctx.replyWithVoice(new InputFile(dyuBuf, "welcome_dyu.wav"), {
+      caption: "🗣️ Dioula ➡️",
+    });
+  } catch (err) {
+    console.error("[telegram] audio choix de langue échouée:", err);
+  }
+
   await ctx.reply(WELCOME_BILINGUAL_TEXT, {
     parse_mode: "Markdown",
     reply_markup: langKeyboard(),
   });
-
-  void (async () => {
-    try {
-      // Texte DÉJÀ en mos/dyu -> speak() (jamais localize(), qui traduirait
-      // à tort depuis le français et produirait un résultat incohérent).
-      const [mosUrl, dyuUrl] = await Promise.all([
-        getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_MOS, "mos"),
-        getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_DYU, "dyu"),
-      ]);
-      const [mosBuf, dyuBuf] = await Promise.all([
-        downloadAudio(mosUrl),
-        downloadAudio(dyuUrl),
-      ]);
-      await ctx.replyWithVoice(new InputFile(mosBuf, "welcome_mos.wav"), {
-        caption: "🗣️ Mooré ⬅️",
-      });
-      await ctx.replyWithVoice(new InputFile(dyuBuf, "welcome_dyu.wav"), {
-        caption: "🗣️ Dioula ➡️",
-      });
-    } catch (err) {
-      console.error("[telegram] audio choix de langue échouée:", err);
-    }
-  })();
 }
 
 // ---------------------------------------------------------------------------
@@ -205,8 +207,8 @@ async function checkQuotaOrReply(
   const quota = await checkAndConsumeQuota(dbUser);
   if (!quota.allowed) {
     const message = QUOTA_REACHED_MESSAGES[lang] ?? QUOTA_REACHED_MESSAGES.fr;
+    await sendMenuAudio(ctx, "quota_reached", message, lang, "quota.wav");
     await ctx.reply(message + "\n\nEnvoyez PAYER pour continuer aujourd'hui.");
-    sendMenuAudio(ctx, "quota_reached", message, lang, "quota.wav");
     return false;
   }
   return true;
@@ -241,10 +243,10 @@ async function replyWithError(
   await ctx.api.deleteMessage(ctx.chat!.id, ackMessageId).catch(() => {});
   const catalog = isRateLimitError(err) ? ERR_RATE_LIMIT : ERR_GENERIC;
   const message = t(catalog, lang);
-  await ctx.reply(message);
   if (lang !== "fr") {
-    sendMenuAudio(ctx, isRateLimitError(err) ? "err_rate_limit" : "err_generic", message, lang, "erreur.wav");
+    await sendMenuAudio(ctx, isRateLimitError(err) ? "err_rate_limit" : "err_generic", message, lang, "erreur.wav");
   }
+  await ctx.reply(message);
   console.error("[telegram]", err);
 }
 
@@ -290,20 +292,20 @@ export function getBot(): Bot {
   bot.command("menu", async (ctx) => {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
+    await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
     await ctx.reply(t(ACTION_MENU, lang), {
       reply_markup: actionKeyboard(lang),
     });
-    sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
   });
 
   // /document — raccourci vers le menu des docs gouvernementaux
   bot.command("document", async (ctx) => {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
+    await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
     await ctx.reply(t(GOV_DOC_MENU, lang), {
       reply_markup: govDocKeyboard(lang),
     });
-    sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
   });
 
   // /lang — changer de langue
@@ -351,11 +353,11 @@ export function getBot(): Bot {
 
     await ctx.answerCallbackQuery();
 
-    // Afficher le menu des actions dans la langue choisie
+    // Afficher le menu des actions dans la langue choisie (audio d'abord)
+    await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
     await ctx.reply(t(ACTION_MENU, lang), {
       reply_markup: actionKeyboard(lang),
     });
-    sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
   });
 
   // -------------------------------------------------------------------------
@@ -366,25 +368,25 @@ export function getBot(): Bot {
     await ctx.answerCallbackQuery();
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(EXPLAIN_DOC_PROMPT, lang ?? "fr");
+    if (lang) await sendMenuAudio(ctx, "explain_doc_prompt", message, lang, "invite.wav");
     await ctx.reply(message);
-    if (lang) sendMenuAudio(ctx, "explain_doc_prompt", message, lang, "invite.wav");
   });
 
   bot.callbackQuery("action:gov_doc", async (ctx) => {
     await ctx.answerCallbackQuery();
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
+    if (lang) await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
     await ctx.reply(t(GOV_DOC_MENU, lang ?? "fr"), {
       reply_markup: govDocKeyboard(lang ?? "dyu"),
     });
-    if (lang) sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
   });
 
   bot.callbackQuery("action:chat", async (ctx) => {
     await ctx.answerCallbackQuery();
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(CHAT_PROMPT, lang ?? "fr");
+    if (lang) await sendMenuAudio(ctx, "chat_prompt", message, lang, "invite.wav");
     await ctx.reply(message);
-    if (lang) sendMenuAudio(ctx, "chat_prompt", message, lang, "invite.wav");
   });
 
   // -------------------------------------------------------------------------
@@ -400,26 +402,26 @@ export function getBot(): Bot {
 
     await ctx.answerCallbackQuery();
 
-    // 1. Envoyer le texte d'affichage avec le lien
+    // 1. Générer et envoyer un audio expliquant la situation (sans l'URL),
+    // AVANT le texte : ce message ne porte pas de boutons, mais on garde le
+    // même ordre (audio -> texte) pour rester cohérent sur tout le bot.
+    try {
+      const ttsText = t(GOV_DOC_COMING_SOON_TTS, lang);
+      const localLang: LocalLang = lang === "fr" ? "dyu" : lang;
+      const result = await localize(ttsText, localLang);
+      const audioBuffer = await downloadAudio(result.audioUrl);
+      await ctx.replyWithAudio(
+        new InputFile(audioBuffer, "info_document.wav"),
+        { caption: result.translated }
+      );
+    } catch (err) {
+      console.error("[telegram] govdoc TTS failed:", err);
+    }
+
+    // 2. Envoyer le texte d'affichage avec le lien
     const displayText =
       `*${docName}*\n\n${t(GOV_DOC_COMING_SOON_DISPLAY, lang)}\n${url}`;
     await ctx.reply(displayText, { parse_mode: "Markdown" });
-
-    // 2. Générer et envoyer un audio expliquant la situation (sans l'URL)
-    void (async () => {
-      try {
-        const ttsText = t(GOV_DOC_COMING_SOON_TTS, lang);
-        const localLang: LocalLang = lang === "fr" ? "dyu" : lang;
-        const result = await localize(ttsText, localLang);
-        const audioBuffer = await downloadAudio(result.audioUrl);
-        await ctx.replyWithAudio(
-          new InputFile(audioBuffer, "info_document.wav"),
-          { caption: result.translated }
-        );
-      } catch (err) {
-        console.error("[telegram] govdoc TTS failed:", err);
-      }
-    })();
   });
 
   // -------------------------------------------------------------------------
@@ -514,8 +516,8 @@ export function getBot(): Bot {
     const mimeType = ctx.message.document.mime_type ?? "";
     if (!mimeType.startsWith("image/") && mimeType !== "application/pdf") {
       const message = t(ERR_WRONG_FILE, lang);
+      await sendMenuAudio(ctx, "err_wrong_file", message, lang, "erreur.wav");
       await ctx.reply(message);
-      sendMenuAudio(ctx, "err_wrong_file", message, lang, "erreur.wav");
       return;
     }
     if (!(await checkQuotaOrReply(ctx, lang))) return;
