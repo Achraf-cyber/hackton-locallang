@@ -459,10 +459,8 @@ export function getBot(): Bot {
             channel: "telegram",
             lang,
             type: "voice",
-            inputSummary: transcriptText
-              ? transcriptText.slice(0, 80)
-              : "voice:telegram",
-            outputSummary: out.result.translated.slice(0, 80),
+            inputSummary: transcriptText ? transcriptText : "voice:telegram",
+            outputSummary: out.result.translated,
             durationMs,
             userId: dbUser.id,
           },
@@ -500,8 +498,8 @@ export function getBot(): Bot {
             channel: "telegram",
             lang,
             type: "photo",
-            inputSummary: `photo:${largest.file_id.slice(0, 70)}`,
-            outputSummary: out.result.translated.slice(0, 80),
+            inputSummary: `photo:${largest.file_id}`,
+            outputSummary: out.result.translated,
             durationMs,
             userId: dbUser.id,
           },
@@ -550,9 +548,9 @@ export function getBot(): Bot {
             lang,
             type: "photo",
             inputSummary: `document:${
-              ctx.message.document.file_name?.slice(0, 70) ?? "file"
+              ctx.message.document.file_name ?? "file"
             }`,
-            outputSummary: out.result.translated.slice(0, 80),
+            outputSummary: out.result.translated,
             durationMs,
             userId: dbUser.id,
           },
@@ -621,8 +619,8 @@ export function getBot(): Bot {
             channel: "telegram",
             lang,
             type: "text",
-            inputSummary: ctx.message.text.slice(0, 80),
-            outputSummary: out.result.translated.slice(0, 80),
+            inputSummary: ctx.message.text,
+            outputSummary: out.result.translated,
             durationMs,
             userId: dbUser.id,
           },

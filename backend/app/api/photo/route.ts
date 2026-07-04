@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         lang: finalLang,
         type: "photo",
         inputSummary: `photo:${fileNameStr} (${file.size} octets)`,
-        outputSummary: out.result.translated.slice(0, 80),
+        outputSummary: out.result.translated,
         durationMs,
         userId: anonymous ? undefined : user.id,
       },
