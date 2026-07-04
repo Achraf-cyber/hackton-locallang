@@ -12,13 +12,21 @@ from typing import Literal
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.deps import get_settings
-from app.services.asr import ASR
-from app.services.translator import Translator
-from app.services.tts import TTS
+from app.services.asr import (
+    HF_API_MODEL_NAME,
+    MODEL_NAME as ASR_LOCAL_MODEL_NAME,
+    OMNILINGUAL_CTC_MODEL_CARD,
+    OMNILINGUAL_LLM_MODEL_CARD,
+    OMNILINGUAL_MODEL_CARD,
+    ASR,
+)
+from app.services.translator import MODEL_NAME as NLLB_MODEL_NAME, Translator
+from app.services.tts import MMS_TTS_MODEL_NAMES, TTS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-service")
@@ -74,6 +82,71 @@ class SpeakRequest(BaseModel):
 
 class SpeakResponse(BaseModel):
     audio_url: str
+
+
+_ASR_MODEL_NAMES = {
+    "local": ASR_LOCAL_MODEL_NAME,
+    "hf_api": HF_API_MODEL_NAME,
+    "omnilingual": f"facebook/{OMNILINGUAL_MODEL_CARD}",
+    "omnilingual_ctc": f"facebook/{OMNILINGUAL_CTC_MODEL_CARD}",
+    "omnilingual_llm": f"facebook/{OMNILINGUAL_LLM_MODEL_CARD}",
+}
+
+
+def _dashboard_rows() -> list[tuple[str, str, str]]:
+    """(composant, modele actif, etat de chargement) pour /."""
+    asr_loaded = "chargé" if ASR._instance is not None else "pas encore chargé (lazy)"
+    translator_loaded = "chargé" if Translator._instance is not None else "pas encore chargé (lazy)"
+    tts_loaded = "chargé" if TTS._instance is not None else "pas encore chargé (lazy)"
+
+    translation_model = (
+        "masakhane/afrimt5_fr_{bam,mos}_news" if settings.TRANSLATION_BACKEND == "afrimt5" else NLLB_MODEL_NAME
+    )
+    tts_dyu_model = "k2-fsa/OmniVoice" if settings.TTS_BACKEND_DYU == "omnivoice" else MMS_TTS_MODEL_NAMES["dyu"]
+
+    return [
+        ("ASR (dyu/mos/fra)", _ASR_MODEL_NAMES.get(settings.ASR_BACKEND, settings.ASR_BACKEND), asr_loaded),
+        ("Traduction", translation_model, translator_loaded),
+        ("TTS — dyu", tts_dyu_model, tts_loaded),
+        ("TTS — mos", MMS_TTS_MODEL_NAMES["mos"], tts_loaded),
+    ]
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard() -> str:
+    rows = _dashboard_rows()
+    rows_html = "\n".join(
+        f"<tr><td>{component}</td><td><code>{model}</code></td><td>{status}</td></tr>"
+        for component, model, status in rows
+    )
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>model-service — état</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }}
+  h1 {{ font-size: 1.25rem; }}
+  table {{ border-collapse: collapse; width: 100%; max-width: 720px; margin-top: 1rem; }}
+  td {{ padding: 0.5rem 0.75rem; border-bottom: 1px solid #334155; }}
+  td:first-child {{ color: #94a3b8; white-space: nowrap; }}
+  code {{ color: #7dd3fc; }}
+  .ok {{ color: #4ade80; }}
+</style>
+</head>
+<body>
+  <h1>🩺 model-service — <span class="ok">en ligne</span></h1>
+  <table>
+    <tr><td>Composant</td><td>Modèle actif</td><td>État</td></tr>
+    {rows_html}
+  </table>
+  <p style="color:#64748b; margin-top:1.5rem;">
+    Config via variables d'env (ASR_BACKEND / TRANSLATION_BACKEND / TTS_BACKEND_DYU).
+    Chaque modèle est chargé au premier appel (singleton paresseux), donc "pas encore chargé"
+    juste après un redémarrage est normal.
+  </p>
+</body>
+</html>"""
 
 
 @app.get("/health")

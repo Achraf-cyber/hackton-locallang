@@ -4,6 +4,14 @@ def test_health(client):
     assert response.json() == {"status": "ok"}
 
 
+def test_dashboard(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "ASR" in response.text
+    assert "Traduction" in response.text
+
+
 def test_localize_mocked(client):
     response = client.post(
         "/localize",
