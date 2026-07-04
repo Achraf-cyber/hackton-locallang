@@ -1,12 +1,17 @@
 """Synthese vocale (text-to-speech) pour le Dioula et le Moore via les modeles
 VITS facebook/mms-tts-dyu et facebook/mms-tts-mos."""
 
+import logging
 import re
 
 import numpy as np
 import soundfile as sf
 import torch
 from transformers import VitsModel, VitsTokenizer
+
+from app.deps import get_settings
+
+logger = logging.getLogger("model-service.tts")
 
 MMS_TTS_MODEL_NAMES = {
     "dyu": "facebook/mms-tts-dyu",
@@ -21,13 +26,6 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _LETTERS_RE = re.compile(r"[^a-zA-ZÀ-ÖØ-öø-ÿ]")
 _SENTENCE_END_RE = re.compile(r"[.!?]+")
 
-# EXPERIMENTAL : NLLB laisse a raison les noms propres francais/anglais tels
-# quels (ex. "Jean Dupont", "Tetouan") -- mais le tokenizer VITS de
-# mms-tts-{dyu,mos} ne connait que l'alphabet phonetique de sa langue, et
-# SUPPRIME SILENCIEUSEMENT toute lettre absente de son vocabulaire (verifie
-# par inspection directe : "Achraf" -> "araf" en moore, "c" et "h" n'existant
-# pas dans le vocabulaire mos). On remplace donc chaque lettre absente par
-# l'approximation phonetique la plus proche plutot que de la perdre.
 _ACCENT_TRANSLATION = str.maketrans(
     {
         "é": "e", "è": "e", "ê": "e", "ë": "e",
@@ -51,6 +49,7 @@ class TTS:
         self._models: dict[str, VitsModel] = {}
         self._tokenizers: dict[str, VitsTokenizer] = {}
         self._allowed_chars: dict[str, set[str]] = {}
+        self._omnivoice_model = None
 
     @classmethod
     def get_instance(cls) -> "TTS":
@@ -174,7 +173,38 @@ class TTS:
             output = model(**inputs).waveform
         return output.squeeze().cpu().numpy()
 
+    def _get_omnivoice_model(self):
+        if self._omnivoice_model is None:
+            from omnivoice import OmniVoice
+            # on utilise cuda si disponible, sinon cpu
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            # CPU est plus stable avec float32 pour l'inference
+            dtype = torch.float32 if device == "cpu" else torch.float16
+            self._omnivoice_model = OmniVoice.from_pretrained(
+                "k2-fsa/OmniVoice",
+                device_map=device,
+                dtype=dtype
+            )
+        return self._omnivoice_model
+
     def speak(self, text: str, lang: str, output_path: str) -> str:
+        settings = get_settings()
+        if lang == "dyu" and settings.TTS_BACKEND_DYU == "omnivoice":
+            try:
+                model = self._get_omnivoice_model()
+                # Synthesiser l'audio avec Voice Design
+                audio = model.generate(
+                    text=text,
+                    instruct="female, young adult, clear speech, neutral accent"
+                )
+                # OmniVoice retourne du 24 kHz
+                sf.write(output_path, audio[0], 24000)
+                return output_path
+            except Exception as e:
+                logger.warning("OmniVoice non disponible pour dyu, fallback sur MMS-TTS: %s", e)
+                # Fallback sur MMS-TTS
+
+        # TTS MMS
         model, _ = self._get_model(lang)
         sample_rate = model.config.sampling_rate
 

@@ -15,3 +15,7 @@ pillow
 requests
 pytest
 httpx
+
+# ASR_BACKEND=omnilingual (voir app/services/asr.py) est OPTIONNEL et Linux
+# uniquement (fairseq2n n'a aucun wheel Windows) : voir requirements-omnilingual.txt
+# et pre_download.py pour l'installation (WSL/Docker/HF Spaces).

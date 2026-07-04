@@ -9,9 +9,10 @@ class Settings(BaseSettings):
 
     ALLOWED_ORIGINS: list[str] = ["*"]
 
-    # ASR temporaire via l'API d'inference Hugging Face pendant que
-    # facebook/mms-1b-all finit de telecharger en local (voir asr.py).
-    ASR_BACKEND: Literal["local", "hf_api"] = "local"
+    # Voir app/services/asr.py pour le detail des backends.
+    ASR_BACKEND: Literal["local", "hf_api", "omnilingual", "omnilingual_ctc"] = "local"
+    TRANSLATION_BACKEND: Literal["nllb", "afrimt5"] = "nllb"
+    TTS_BACKEND_DYU: Literal["mms", "omnivoice"] = "mms"
     HF_TOKEN: str | None = None
 
 

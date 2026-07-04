@@ -1,7 +1,7 @@
 """Reconnaissance vocale (speech-to-text) pour le Dioula, le Moore et le francais
 via facebook/mms-1b-all.
 
-Deux backends, choisis par Settings.ASR_BACKEND :
+Trois backends, choisis par Settings.ASR_BACKEND :
 - "local" (defaut) : Wav2Vec2ForCTC + AutoProcessor charges en local.
 - "hf_api" : pont temporaire vers l'API d'inference Hugging Face, utile tant
   que le modele local (~3.86 Go) n'est pas entierement telecharge.
@@ -10,7 +10,12 @@ Deux backends, choisis par Settings.ASR_BACKEND :
   utilise donc openai/whisper-large-v3 a la place, qui NE supporte PAS
   officiellement le Dioula ni le Moore (~99 langues entrainees, dyu/mos
   absentes) : fiable seulement pour lang="fra", best-effort pour dyu/mos.
-Le contrat de transcribe(audio_path, lang) est identique dans les deux cas.
+- "omnilingual" : Meta Omnilingual ASR (2025), couvre nativement dyu/mos
+  (verifie via lang_ids.py du modele). Necessite le paquet omnilingual-asr
+  (fairseq2 + fairseq2n), qui n'a AUCUN wheel Windows -- fonctionne
+  uniquement sous Linux/WSL. L'import est fait en lazy pour ne pas casser
+  les backends "local"/"hf_api" sur une machine Windows sans ce paquet.
+Le contrat de transcribe(audio_path, lang) est identique dans les trois cas.
 """
 
 import logging
@@ -34,6 +39,14 @@ MMS_LANG_CODES = {
     "fra": "fra",
 }
 
+OMNILINGUAL_MODEL_CARD = "omniASR_CTC_300M_v2"
+OMNILINGUAL_CTC_MODEL_CARD = "omniASR_CTC_1B"
+OMNILINGUAL_LANG_CODES = {
+    "dyu": "dyu_Latn",
+    "mos": "mos_Latn",
+    "fra": "fra_Latn",
+}
+
 TARGET_SAMPLE_RATE = 16_000
 WINDOW_SECONDS = 30
 OVERLAP_SECONDS = 2
@@ -48,6 +61,13 @@ class ASR:
 
         if self.backend == "hf_api":
             self._client = InferenceClient(model=HF_API_MODEL_NAME, token=settings.HF_TOKEN)
+            return
+
+        if self.backend in ("omnilingual", "omnilingual_ctc"):
+            from omnilingual_asr.models.inference.pipeline import ASRInferencePipeline
+
+            model_card = OMNILINGUAL_CTC_MODEL_CARD if self.backend == "omnilingual_ctc" else OMNILINGUAL_MODEL_CARD
+            self._omni_pipeline = ASRInferencePipeline(model_card=model_card)
             return
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -101,9 +121,20 @@ class ASR:
         output = self._client.automatic_speech_recognition(audio_path)
         return output.text.strip()
 
+    def _transcribe_omnilingual(self, audio_path: str, lang: str) -> str:
+        if lang not in OMNILINGUAL_LANG_CODES:
+            raise ValueError(f"Langue non supportee: {lang}")
+        result = self._omni_pipeline.transcribe(
+            [audio_path], lang=[OMNILINGUAL_LANG_CODES[lang]], batch_size=1
+        )
+        return result[0].strip()
+
     def transcribe(self, audio_path: str, lang: str) -> str:
         if self.backend == "hf_api":
             return self._transcribe_hf_api(audio_path, lang)
+
+        if self.backend in ("omnilingual", "omnilingual_ctc"):
+            return self._transcribe_omnilingual(audio_path, lang)
 
         self._set_lang(lang)
         samples = self._load_audio(audio_path)

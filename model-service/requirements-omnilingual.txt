@@ -1,0 +1,19 @@
+# ASR_BACKEND=omnilingual : Meta Omnilingual ASR (2025), couvre nativement
+# dyu_Latn/mos_Latn/fra_Latn -- LINUX UNIQUEMENT (fairseq2n n'a aucun wheel
+# Windows, et exige une version de torch EXACTEMENT alignee avec un wheel
+# fairseq2 prebuild : 2.9.1 au moment de la redaction, pas la derniere).
+#
+# Installation (venv Linux/WSL/Docker deja actif) :
+#
+#   pip install torch==2.9.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cpu
+#   pip install "fairseq2" --extra-index-url https://fair.pkg.atmeta.com/fairseq2/whl/pt2.9.1/cpu \
+#       --trusted-host fair.pkg.atmeta.com   # certificat de ce domaine expire au moment de la redaction
+#   pip install omnilingual-asr --no-deps    # --no-deps : evite de re-resoudre torch en variante CUDA
+#   pip install retrying xxhash              # dependances transitives manquantes du package
+#
+# Si un torch plus recent que 2.9.1 est deja installe (ex. le venv Windows
+# partage), le desinstaller/repointer d'abord : fairseq2 plante sinon
+# (incompatibilite ABI C++, cf. avertissement officiel de fairseq2).
+#
+# Verifie le 2026-07-04 : fairseq2==0.8.1 / fairseq2n==0.8.1+cpu sont les
+# versions resolues a cet index pour torch 2.9.1.

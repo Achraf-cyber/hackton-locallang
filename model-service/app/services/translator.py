@@ -1,9 +1,12 @@
-"""Traduction entre le francais et le Dioula / Moore via facebook/nllb-200-distilled-600M."""
-
+import logging
 import re
 
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+from app.deps import get_settings
+
+logger = logging.getLogger("model-service.translator")
 
 MODEL_NAME = "facebook/nllb-200-distilled-600M"
 
@@ -21,9 +24,35 @@ class Translator:
 
     def __init__(self) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME).to(self.device)
-        self.model.eval()
+        settings = get_settings()
+        self.backend = settings.TRANSLATION_BACKEND
+
+        # Lazy init for NLLB
+        self.nllb_tokenizer = None
+        self.nllb_model = None
+
+        # Lazy init for AfriMT5
+        self.afrimt5_models = {}
+        self.afrimt5_tokenizers = {}
+
+        if self.backend == "nllb":
+            self._init_nllb()
+
+    def _init_nllb(self) -> None:
+        if self.nllb_model is None:
+            self.nllb_tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+            self.nllb_model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME).to(self.device)
+            self.nllb_model.eval()
+
+    def _get_afrimt5_model(self, lang: str):
+        if lang not in self.afrimt5_models:
+            # masakhane/afrimt5_fr_bam_news pour dyu/bambara, masakhane/afrimt5_fr_mos_news pour mos
+            hf_repo = "masakhane/afrimt5_fr_bam_news" if lang == "dyu" else "masakhane/afrimt5_fr_mos_news"
+            self.afrimt5_tokenizers[lang] = AutoTokenizer.from_pretrained(hf_repo)
+            model = AutoModelForSeq2SeqLM.from_pretrained(hf_repo).to(self.device)
+            model.eval()
+            self.afrimt5_models[lang] = model
+        return self.afrimt5_models[lang], self.afrimt5_tokenizers[lang]
 
     @classmethod
     def get_instance(cls) -> "Translator":
@@ -36,25 +65,43 @@ class Translator:
         return sentences or [text.strip()]
 
     def _translate_batch(self, sentences: list[str], src: str, tgt: str) -> list[str]:
-        self.tokenizer.src_lang = NLLB_LANG_CODES[src]
-        inputs = self.tokenizer(sentences, return_tensors="pt", padding=True).to(self.device)
-        forced_bos_token_id = self.tokenizer.convert_tokens_to_ids(NLLB_LANG_CODES[tgt])
+        self._init_nllb()
+        self.nllb_tokenizer.src_lang = NLLB_LANG_CODES[src]
+        inputs = self.nllb_tokenizer(sentences, return_tensors="pt", padding=True).to(self.device)
+        forced_bos_token_id = self.nllb_tokenizer.convert_tokens_to_ids(NLLB_LANG_CODES[tgt])
         with torch.no_grad():
-            generated = self.model.generate(
+            generated = self.nllb_model.generate(
                 **inputs,
                 forced_bos_token_id=forced_bos_token_id,
                 num_beams=4,
                 max_length=256,
             )
-        return self.tokenizer.batch_decode(generated, skip_special_tokens=True)
+        return self.nllb_tokenizer.batch_decode(generated, skip_special_tokens=True)
 
     def translate(self, text: str, src: str, tgt: str) -> str:
-        if src not in NLLB_LANG_CODES or tgt not in NLLB_LANG_CODES:
+        if src not in ["fr", "dyu", "mos"] or tgt not in ["fr", "dyu", "mos"]:
             raise ValueError(f"Langue non supportee: src={src}, tgt={tgt}")
+
+        # Traduction fr -> local avec AfriMT5 (si active et si le modele est dispo)
+        if self.backend == "afrimt5" and src == "fr":
+            lang = "dyu" if tgt == "dyu" else "mos"
+            try:
+                model, tokenizer = self._get_afrimt5_model(lang)
+                sentences = self._split_sentences(text)
+                translated = []
+                for sentence in sentences:
+                    inputs = tokenizer(sentence, return_tensors="pt").to(self.device)
+                    with torch.no_grad():
+                        generated = model.generate(**inputs, max_length=256)
+                    decoded = tokenizer.decode(generated[0], skip_special_tokens=True)
+                    translated.append(decoded.strip())
+                return " ".join(translated)
+            except Exception as e:
+                logger.warning("AfriMT5 non disponible pour %s, fallback sur NLLB: %s", lang, e)
+                # Fallback sur NLLB
+
+        # Traduction local -> fr (ou si afrimt5 non dispo/erreur) : toujours NLLB
         sentences = self._split_sentences(text)
-        # Un seul appel batch (au lieu d'une boucle par phrase) : sur CPU, le
-        # cout d'un forward/beam-search batche est tres inferieur a N appels
-        # sequentiels (amorti sur tout le batch au lieu d'etre paye N fois).
         translated = self._translate_batch(sentences, src, tgt)
         return " ".join(translated)
 
