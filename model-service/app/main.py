@@ -4,6 +4,8 @@ Lancement local :
     uvicorn app.main:app --reload --port 8000
 """
 
+import asyncio
+import contextlib
 import logging
 import time
 import uuid
@@ -36,9 +38,47 @@ settings = get_settings()
 MEDIA_DIR = Path(__file__).resolve().parent.parent / "media"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
+# /localize et /speak ecrivent un .wav unique (uuid) par requete dans
+# MEDIA_DIR et ne le suppriment JAMAIS (le client le recupere de facon
+# asynchrone via audio_url, donc on ne peut pas le supprimer juste apres la
+# reponse) : sans purge, le disque du Space se remplit indefiniment. On
+# supprime donc en arriere-plan tout fichier plus vieux que MEDIA_MAX_AGE_SECONDS,
+# largement au-dela du temps necessaire pour qu'un client aille chercher l'audio.
+MEDIA_MAX_AGE_SECONDS = 2 * 60 * 60
+MEDIA_CLEANUP_INTERVAL_SECONDS = 30 * 60
+
+
+async def _cleanup_media_loop() -> None:
+    while True:
+        await asyncio.sleep(MEDIA_CLEANUP_INTERVAL_SECONDS)
+        try:
+            cutoff = time.time() - MEDIA_MAX_AGE_SECONDS
+            removed = 0
+            for path in MEDIA_DIR.iterdir():
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+                    removed += 1
+            if removed:
+                logger.info("Nettoyage media/: %d fichier(s) supprime(s)", removed)
+        except Exception:
+            logger.exception("Echec du nettoyage periodique de media/")
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    cleanup_task = asyncio.create_task(_cleanup_media_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cleanup_task
+
+
 app = FastAPI(
     title="model-service",
     description="Expose ASR, traduction et TTS pour le Dioula et le Mooré.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

@@ -57,6 +57,22 @@ function pruneIfExpired(key: string): void {
   }
 }
 
+// La purge "à l'accès" (pruneIfExpired ci-dessus) ne nettoie que la session
+// du chat qui redevient actif — une session abandonnée pour de bon (l'usager
+// ne revient jamais) ne serait donc JAMAIS purgée : elle retient potentiellement
+// les buffers bruts des documents uploadés (plusieurs Mo chacun) indéfiniment.
+// Ce balayage périodique parcourt TOUTES les sessions, pas seulement celle
+// consultée.
+const GLOBAL_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, session] of sessions) {
+    if (now - session.lastActivityAt > SESSION_TTL_MS) {
+      sessions.delete(key);
+    }
+  }
+}, GLOBAL_SWEEP_INTERVAL_MS).unref();
+
 export function hasActiveCasierSession(chatId: number | string): boolean {
   const key = sessionKey(chatId);
   pruneIfExpired(key);

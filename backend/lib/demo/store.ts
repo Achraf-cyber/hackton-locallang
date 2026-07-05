@@ -14,8 +14,16 @@ export interface StoredDemande {
 
 const demandes: StoredDemande[] = [];
 
+// Filet de sécurité pour un process long-uptime : sans plafond, ce tableau
+// grossirait indéfiniment (jamais purgé ailleurs). Une démo ne justifie pas
+// plus ; au-delà, on abandonne les plus anciennes.
+const MAX_STORED_DEMANDES = 500;
+
 export function addDemande(demande: StoredDemande): void {
   demandes.push(demande);
+  if (demandes.length > MAX_STORED_DEMANDES) {
+    demandes.splice(0, demandes.length - MAX_STORED_DEMANDES);
+  }
 }
 
 export function findDemande(referenceCode: string): StoredDemande | undefined {
