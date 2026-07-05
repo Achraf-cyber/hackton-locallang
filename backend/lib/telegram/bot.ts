@@ -24,6 +24,7 @@ import { resolveUser, getChatContext } from "../identity";
 import { checkAndConsumeQuota, QUOTA_REACHED_MESSAGES } from "../quota";
 import { prisma } from "../db";
 import { getCachedSpeechUrl } from "../audioCache";
+import { fetchPregeneratedAudio } from "../pregeneratedAudio";
 import {
   t,
   tBilingual,
@@ -48,7 +49,10 @@ import {
   ERR_RATE_LIMIT,
   ERR_GENERIC,
   ERR_WRONG_FILE,
+  CASIER_CANCELLED,
+  CASIER_GENERIC_ERROR,
   govDocLabel,
+  govDocLabelBilingual,
   govDocUrl,
 } from "../messages";
 import type { GovDocKey } from "../messages";
@@ -59,7 +63,7 @@ import {
   handleCasierDocument,
   handleCasierTextAnswer,
   cancelCasierSession,
-  CASIER_ASK_DOC1,
+  casierAskDoc1,
   type CasierStepResult,
 } from "./casierFlow";
 
@@ -77,17 +81,17 @@ function langKeyboard(): InlineKeyboard {
 
 function actionKeyboard(lang: LocalLang): InlineKeyboard {
   return new InlineKeyboard()
-    .text(t(ACTION_EXPLAIN_DOC, lang), "action:explain_doc")
+    .text(tBilingual(ACTION_EXPLAIN_DOC, lang), "action:explain_doc")
     .row()
-    .text(t(ACTION_GOV_DOC, lang), "action:gov_doc")
+    .text(tBilingual(ACTION_GOV_DOC, lang), "action:gov_doc")
     .row()
-    .text(t(ACTION_CHAT, lang), "action:chat");
+    .text(tBilingual(ACTION_CHAT, lang), "action:chat");
 }
 
 function govDocKeyboard(lang: LocalLang): InlineKeyboard {
   const kb = new InlineKeyboard();
   for (const doc of GOV_DOCS) {
-    kb.text(govDocLabel(doc.key, lang), `govdoc:${doc.key}`).row();
+    kb.text(govDocLabelBilingual(doc.key, lang), `govdoc:${doc.key}`).row();
   }
   return kb;
 }
@@ -195,12 +199,9 @@ async function replyToCasierStep(ctx: Context, result: CasierStepResult): Promis
 }
 
 /** Gère une erreur survenue pendant une étape du flux casier (extraction, automatisation...). */
-async function replyToCasierError(ctx: Context, err: unknown): Promise<void> {
+async function replyToCasierError(ctx: Context, err: unknown, lang: LocalLang | "fr" = "fr"): Promise<void> {
   console.error("[telegram] erreur dans le flux casier judiciaire:", err);
-  await ctx.reply(
-    "Une erreur est survenue pendant le traitement de votre demande de casier judiciaire (démonstration). " +
-      "Réessayez, ou renvoyez le document si l'erreur persiste.",
-  );
+  await ctx.reply(tBilingual(CASIER_GENERIC_ERROR, lang));
 }
 
 async function sendMenuAudio(
@@ -211,8 +212,13 @@ async function sendMenuAudio(
   filename = "menu.wav"
 ): Promise<void> {
   try {
-    const audioUrl = await getCachedSpeechUrl(key, text, lang);
-    const buffer = await downloadAudio(audioUrl);
+    // Ce texte est FIXE (déjà connu au moment du build, voir
+    // scripts/pregenerate-audio.ts) : on essaie d'abord le fichier
+    // pré-généré (aucune attente TTS pour l'usager), et on ne retombe sur
+    // une génération à la demande que s'il est absent (ex. nouvelle clé pas
+    // encore pré-générée).
+    const pregenerated = await fetchPregeneratedAudio(key, lang);
+    const buffer = pregenerated ?? (await downloadAudio(await getCachedSpeechUrl(key, text, lang)));
     await ctx.replyWithVoice(new InputFile(buffer, filename));
   } catch (err) {
     console.error(`[telegram] audio menu "${key}" échouée:`, err);
@@ -230,13 +236,14 @@ async function sendLanguagePicker(ctx: Context): Promise<void> {
   try {
     // Texte DÉJÀ en mos/dyu -> speak() (jamais localize(), qui traduirait
     // à tort depuis le français et produirait un résultat incohérent).
-    const [mosUrl, dyuUrl] = await Promise.all([
-      getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_MOS, "mos"),
-      getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_DYU, "dyu"),
-    ]);
+    // Comme sendMenuAudio : texte fixe -> fichier pré-généré en priorité.
     const [mosBuf, dyuBuf] = await Promise.all([
-      downloadAudio(mosUrl),
-      downloadAudio(dyuUrl),
+      fetchPregeneratedAudio("welcome", "mos").then(
+        (buf) => buf ?? getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_MOS, "mos").then(downloadAudio),
+      ),
+      fetchPregeneratedAudio("welcome", "dyu").then(
+        (buf) => buf ?? getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_DYU, "dyu").then(downloadAudio),
+      ),
     ]);
     await ctx.replyWithVoice(new InputFile(mosBuf, "welcome_mos.wav"), {
       caption: "🗣️ Mooré ⬅️",
@@ -549,8 +556,9 @@ export function getBot(): Bot {
     // 2 documents -> extraction -> questions -> soumission -> récépissé.
     // Les autres options du menu restent des liens "bientôt disponible".
     if (key === "casier" && ctx.chat) {
-      startCasierSession(ctx.chat.id, lang === "fr" ? "dyu" : lang);
-      await ctx.reply(CASIER_ASK_DOC1);
+      const casierLang: LocalLang = lang === "fr" ? "dyu" : lang;
+      startCasierSession(ctx.chat.id, casierLang);
+      await ctx.reply(casierAskDoc1(casierLang));
       return;
     }
 
@@ -637,7 +645,7 @@ export function getBot(): Bot {
         const result = await handleCasierDocument(ctx.chat.id, buffer, "image/jpeg", "photo.jpg");
         await replyToCasierStep(ctx, result);
       } catch (err) {
-        await replyToCasierError(ctx, err);
+        await replyToCasierError(ctx, err, lang);
       }
       return;
     }
@@ -705,7 +713,7 @@ export function getBot(): Bot {
         );
         await replyToCasierStep(ctx, result);
       } catch (err) {
-        await replyToCasierError(ctx, err);
+        await replyToCasierError(ctx, err, lang);
       }
       return;
     }
@@ -762,7 +770,7 @@ export function getBot(): Bot {
     if (casierSession) {
       if (ctx.message.text.trim().toUpperCase() === "ANNULER") {
         cancelCasierSession(ctx.chat.id);
-        await ctx.reply("Demande de casier judiciaire annulée.");
+        await ctx.reply(tBilingual(CASIER_CANCELLED, lang));
         return;
       }
       if (casierSession.step === "awaiting_field") {
@@ -770,7 +778,7 @@ export function getBot(): Bot {
           const result = await handleCasierTextAnswer(ctx.chat.id, ctx.message.text);
           await replyToCasierStep(ctx, result);
         } catch (err) {
-          await replyToCasierError(ctx, err);
+          await replyToCasierError(ctx, err, lang);
         }
         return;
       }

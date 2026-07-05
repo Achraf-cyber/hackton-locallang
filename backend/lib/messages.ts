@@ -140,6 +140,13 @@ export function govDocLabel(key: GovDocKey, lang: LocalLang | "fr"): string {
   return doc.labelFr;
 }
 
+/** Comme `govDocLabel`, mais ajoute le libellé français entre parenthèses (voir `tBilingual`). */
+export function govDocLabelBilingual(key: GovDocKey, lang: LocalLang | "fr"): string {
+  const local = govDocLabel(key, lang);
+  if (lang === "fr") return local;
+  return `${local} (${govDocLabel(key, "fr")})`;
+}
+
 /** Retourne l'URL du document. */
 export function govDocUrl(key: GovDocKey): string {
   return GOV_DOCS.find((d) => d.key === key)?.url ?? "";
@@ -214,4 +221,25 @@ export const ERR_WRONG_FILE: Trilingual = {
   mos: "📎 Tʋm foto wala PDF bala.",
   dyu: "📎 I ka fɔtɔ wala PDF ci.",
   fr: "📎 Envoyez une image ou un PDF s'il vous plaît.",
+};
+
+// ---------------------------------------------------------------------------
+// Flux "casier judiciaire" (voir lib/telegram/casierFlow.ts)
+// NOTE : traductions dyu/mos best-effort, non relues par un locuteur natif
+// (même réserve que plus haut) -- contexte identité/administratif où une
+// erreur de sens compte plus qu'ailleurs, à faire relire avant un usage réel.
+// ---------------------------------------------------------------------------
+
+export const CASIER_CANCELLED: Trilingual = {
+  mos: "Kasiye judisiyɛɛr ɲinigã sa.",
+  dyu: "Kasiyɛ jidisyɛr ɲinini dabila.",
+  fr: "Demande de casier judiciaire annulée.",
+};
+
+export const CASIER_GENERIC_ERROR: Trilingual = {
+  mos: "Yell bee kasiye judisiyɛɛr ɲinigã manesem sasa. Leb-y n mak, wall tʋm-y sɛbɛo lame yell wã kell n bee.",
+  dyu: "Fili kɛra i ka kasiyɛ jidisyɛr ɲinini kunnafoni la (demɔnisirasiyɔn). I ka segin ka mɛn, walima ka sɛbɛn cin tugun ni fili in bɛ to.",
+  fr:
+    "Une erreur est survenue pendant le traitement de votre demande de casier judiciaire (démonstration). " +
+    "Réessayez, ou renvoyez le document si l'erreur persiste.",
 };

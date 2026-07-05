@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "dev:bot": "tsx scripts/dev-telegram.ts"
+    "dev:bot": "tsx scripts/dev-telegram.ts",
+    "pregenerate-audio": "tsx scripts/pregenerate-audio.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.8",

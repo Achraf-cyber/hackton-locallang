@@ -20,6 +20,8 @@ import {
   type SelectOption,
 } from "../demo/data";
 import type { DemandeurState, FiliationState } from "../demo/types";
+import { tBilingual, type Trilingual } from "../messages";
+import type { LocalLang } from "../modelService";
 
 export type CasierFields = Partial<DemandeurState & FiliationState>;
 
@@ -27,7 +29,13 @@ export type FieldKey = keyof DemandeurState | keyof FiliationState;
 
 interface FieldSpec {
   key: FieldKey;
-  prompt: string;
+  /**
+   * Traductions "best-effort", PAS relues par un locuteur natif (même
+   * réserve que QUOTA_REACHED_MESSAGES dans lib/messages.ts) : contexte
+   * administratif/identité où une erreur de sens compte plus qu'ailleurs.
+   * À faire relire avant un usage réel en production.
+   */
+  prompt: Trilingual;
   /** Sous-ensemble depuis lequel il faut choisir, ou null si texte libre. */
   options: (fields: CasierFields) => SelectOption[] | null;
   /** Peut être laissé vide (ex. arrondissement) sans bloquer la suite. */
@@ -35,30 +43,94 @@ interface FieldSpec {
 }
 
 const FIELD_ORDER: FieldSpec[] = [
-  { key: "domicile", prompt: "Quel est votre lieu de domicile actuel (ville, quartier) ?", options: () => null },
-  { key: "profession", prompt: "Quelle est votre profession ?", options: () => null },
-  { key: "telephone", prompt: "Quel est votre numéro de téléphone ?", options: () => null },
+  {
+    key: "domicile",
+    prompt: {
+      fr: "Quel est votre lieu de domicile actuel (ville, quartier) ?",
+      mos: "Yaa zĩ-bʋg la fo vɩɩ masã (tẽnga, sekitɛɛr) ?",
+      dyu: "I sigilen bɛ min (dugu, kartie) ?",
+    },
+    options: () => null,
+  },
+  {
+    key: "profession",
+    prompt: {
+      fr: "Quelle est votre profession ?",
+      mos: "Yaa tʋʋm-bʋg la fo tʋmda ?",
+      dyu: "I ka baara ye mun ye ?",
+    },
+    options: () => null,
+  },
+  {
+    key: "telephone",
+    prompt: {
+      fr: "Quel est votre numéro de téléphone ?",
+      mos: "Yaa bõe la fo telefõn nomorã ?",
+      dyu: "I ka telefɔni nimɔrɔ ye jumɛn ye ?",
+    },
+    options: () => null,
+  },
   {
     key: "situationMatrimoniale",
-    prompt: "Quelle est votre situation matrimoniale ?",
+    prompt: {
+      fr: "Quelle est votre situation matrimoniale ?",
+      mos: "Yaa bõe la fo kãadem yellẽ ?",
+      dyu: "I ka furu cogoya ye mun ye ?",
+    },
     options: () => SITUATION_MATRIMONIALE_OPTIONS,
   },
-  { key: "paysNaissance", prompt: "Dans quel pays êtes-vous né(e) ?", options: () => PAYS_OPTIONS },
-  { key: "nationalite", prompt: "Quelle est votre nationalité ?", options: () => NATIONALITE_OPTIONS },
-  { key: "regionNaissance", prompt: "Dans quelle région êtes-vous né(e) ?", options: () => regionOptions() },
+  {
+    key: "paysNaissance",
+    prompt: {
+      fr: "Dans quel pays êtes-vous né(e) ?",
+      mos: "Fo dogame tẽng-bʋg pʋgẽ ?",
+      dyu: "I wolola jamana jumɛn kɔnɔ ?",
+    },
+    options: () => PAYS_OPTIONS,
+  },
+  {
+    key: "nationalite",
+    prompt: {
+      fr: "Quelle est votre nationalité ?",
+      mos: "Yaa bõe la fo tẽng-yʋʋre ?",
+      dyu: "I ka jamana ye mun ye ?",
+    },
+    options: () => NATIONALITE_OPTIONS,
+  },
+  {
+    key: "regionNaissance",
+    prompt: {
+      fr: "Dans quelle région êtes-vous né(e) ?",
+      mos: "Fo dogame rejiõ-bʋg pʋgẽ ?",
+      dyu: "I wolola rejiɔn jumɛn kɔnɔ ?",
+    },
+    options: () => regionOptions(),
+  },
   {
     key: "provinceNaissance",
-    prompt: "Dans quelle province êtes-vous né(e) ?",
+    prompt: {
+      fr: "Dans quelle province êtes-vous né(e) ?",
+      mos: "Fo dogame porovẽs-bʋg pʋgẽ ?",
+      dyu: "I wolola porovɛnsi jumɛn kɔnɔ ?",
+    },
     options: (fields) => provinceOptions(fields.regionNaissance ?? ""),
   },
   {
     key: "communeNaissance",
-    prompt: "Dans quelle commune êtes-vous né(e) ?",
+    prompt: {
+      fr: "Dans quelle commune êtes-vous né(e) ?",
+      mos: "Fo dogame komiin-bʋg pʋgẽ ?",
+      dyu: "I wolola komin jumɛn kɔnɔ ?",
+    },
     options: (fields) => communeOptions(fields.regionNaissance ?? "", fields.provinceNaissance ?? ""),
   },
   {
     key: "arrondissementNaissance",
-    prompt: "Dans quel arrondissement êtes-vous né(e) ?",
+    prompt: {
+      fr: "Dans quel arrondissement êtes-vous né(e) ?",
+      mos: "Fo dogame arrõdisimã-bʋg pʋgẽ ?",
+      dyu: "I wolola arɔndisiman jumɛn kɔnɔ ?",
+    },
     options: (fields) =>
       arrondissementOptions(
         fields.regionNaissance ?? "",
@@ -113,13 +185,20 @@ export function getNextMissingField(fields: CasierFields): FieldSpec | null {
   return null;
 }
 
+const CHOOSE_BY_NUMBER_OR_NAME: Trilingual = {
+  fr: "(Répondez avec le numéro ou le nom.)",
+  mos: "(Leb-y ne nomorã bɩ yʋʋrã.)",
+  dyu: "(I ka jaabi ni nimɔrɔ walima tɔgɔ ye.)",
+};
+
 /** Construit le texte de prompt (question + options numérotées si applicable). */
-export function formatFieldPrompt(spec: FieldSpec, fields: CasierFields): string {
+export function formatFieldPrompt(spec: FieldSpec, fields: CasierFields, lang: LocalLang): string {
+  const prompt = tBilingual(spec.prompt, lang);
   const options = spec.options(fields);
-  if (!options || options.length === 0) return spec.prompt;
+  if (!options || options.length === 0) return prompt;
 
   const listText = options.map((o, i) => `${i + 1}. ${o.label}`).join("\n");
-  return `${spec.prompt}\n${listText}\n(Répondez avec le numéro ou le nom.)`;
+  return `${prompt}\n${listText}\n${tBilingual(CHOOSE_BY_NUMBER_OR_NAME, lang)}`;
 }
 
 /**

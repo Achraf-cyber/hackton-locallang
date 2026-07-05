@@ -17,6 +17,7 @@ import { extractIdentityFields } from "../llm";
 import { submitCasierDemande, type CasierDocument } from "../demoAutomation";
 import { EMPTY_FORM_STATE, type DemoFormState } from "../demo/types";
 import { NATIONALITE_OPTIONS } from "../demo/data";
+import { tBilingual, type Trilingual } from "../messages";
 import {
   getNextMissingField,
   formatFieldPrompt,
@@ -110,10 +111,41 @@ function touch(session: CasierSession): void {
   session.lastActivityAt = Date.now();
 }
 
-export const CASIER_ASK_DOC1 =
-  "Pour votre demande de casier judiciaire, envoyez d'abord une photo ou un PDF de votre extrait/jugement supplétif d'acte de naissance.\n(Répondez ANNULER à tout moment pour arrêter cette démarche.)";
-export const CASIER_ASK_DOC2 =
-  "Merci. Envoyez maintenant une photo ou un PDF de votre CNIB ou passeport.";
+// Traductions best-effort, non relues par un locuteur natif -- voir le
+// commentaire sur FieldSpec.prompt (lib/telegram/casierFields.ts).
+const CASIER_ASK_DOC1_CATALOG: Trilingual = {
+  fr:
+    "Pour votre demande de casier judiciaire, envoyez d'abord une photo ou un PDF de votre extrait/jugement " +
+    "supplétif d'acte de naissance.\n(Répondez ANNULER à tout moment pour arrêter cette démarche.)",
+  mos:
+    "Fo sẽn dat kasiye judisiyɛɛr yellã yĩnga, tʋm-y pipi fotow bɩ PDF fo rogem sɛbɛo (acte de naissance). " +
+    "(Leb-y ANNULER wakat fãa n sa demarsã.)",
+  dyu:
+    "I ka kasiyɛ jidisyɛr ɲinini kama, fɔlɔ i ka fɔtɔ wala PDF ci i wolo sɛbɛn (acte de naissance) ta kan. " +
+    "(I bɛ se ka ANNULER fɔ tuma o tuma walisa ka baara in dabila.)",
+};
+const CASIER_ASK_DOC2_CATALOG: Trilingual = {
+  fr: "Merci. Envoyez maintenant une photo ou un PDF de votre CNIB ou passeport.",
+  mos: "Barka. Tʋm-y masã fotow bɩ PDF fo CNIB bɩ paspoor.",
+  dyu: "I ni ce. Sisan i ka fɔtɔ wala PDF ci i ka CNIB wala paspɔri ta kan.",
+};
+const CASIER_ANSWER_NOT_RECOGNIZED: Trilingual = {
+  fr: "Réponse non reconnue.",
+  mos: "Leoore ka wʋm ye.",
+  dyu: "Jaabi ma faamuya.",
+};
+const CASIER_SUCCESS: Trilingual = {
+  fr: "Demande soumise avec succès (démonstration). Référence :",
+  mos: "Kasiye judisiyɛɛr ɲinigã tʋme ne yam (demonstrasiõ). Sõmblgã :",
+  dyu: "Kasiyɛ jidisyɛr ɲinini bilala ka ɲɛ (demɔnisirasiyɔn). Nimɔrɔ :",
+};
+
+export function casierAskDoc1(lang: LocalLang): string {
+  return tBilingual(CASIER_ASK_DOC1_CATALOG, lang);
+}
+function casierAskDoc2(lang: LocalLang): string {
+  return tBilingual(CASIER_ASK_DOC2_CATALOG, lang);
+}
 
 /**
  * Fusionne les champs extraits d'un document (non-null uniquement) dans la
@@ -174,7 +206,7 @@ export async function handleCasierDocument(
     const extracted = await extractIdentityFields(buffer, mimeType);
     mergeExtracted(session, extracted as unknown as Record<string, unknown>);
     session.step = "awaiting_doc2";
-    return { reply: CASIER_ASK_DOC2, done: false };
+    return { reply: casierAskDoc2(session.lang), done: false };
   }
 
   if (session.step === "awaiting_doc2") {
@@ -201,7 +233,11 @@ export async function handleCasierTextAnswer(
   const spec = session.pendingField;
   const matched = matchFieldAnswer(spec, rawAnswer, session.fields);
   if (matched === null) {
-    return { reply: `Réponse non reconnue.\n${formatFieldPrompt(spec, session.fields)}`, done: false };
+    const notRecognized = tBilingual(CASIER_ANSWER_NOT_RECOGNIZED, session.lang);
+    return {
+      reply: `${notRecognized}\n${formatFieldPrompt(spec, session.fields, session.lang)}`,
+      done: false,
+    };
   }
 
   (session.fields as Record<string, unknown>)[spec.key] = matched;
@@ -228,7 +264,7 @@ async function advanceToNextFieldOrFinalize(
   if (next) {
     session.step = "awaiting_field";
     session.pendingField = next;
-    return { reply: formatFieldPrompt(next, session.fields), done: false };
+    return { reply: formatFieldPrompt(next, session.fields, session.lang), done: false };
   }
 
   session.step = "processing";
@@ -241,9 +277,10 @@ async function advanceToNextFieldOrFinalize(
       acteNaissance: session.doc1,
       pieceIdentite: session.doc2,
     });
+    const successLine = tBilingual(CASIER_SUCCESS, session.lang);
     clearSession(chatId);
     return {
-      reply: `Demande soumise avec succès (démonstration). Référence : ${result.referenceCode}.`,
+      reply: `${successLine} ${result.referenceCode}.`,
       done: true,
       referenceCode: result.referenceCode,
       pdfBuffer: result.pdfBuffer,
