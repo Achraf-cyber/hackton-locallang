@@ -1,7 +1,8 @@
 """Reconnaissance vocale (speech-to-text) pour le Dioula, le Moore et le francais
 via facebook/mms-1b-all.
 
-Trois backends, choisis par Settings.ASR_BACKEND :
+Quatre backends, choisis par Settings.ASR_BACKEND, et une stack GO AI distincte
+contrôlee par Settings.MODEL_STACK :
 - "local" (defaut) : Wav2Vec2ForCTC + AutoProcessor charges en local.
 - "hf_api" : pont temporaire vers l'API d'inference Hugging Face, utile tant
   que le modele local (~3.86 Go) n'est pas entierement telecharge.
@@ -18,6 +19,14 @@ Trois backends, choisis par Settings.ASR_BACKEND :
   wheel Windows -- fonctionne uniquement sous Linux/WSL. L'import est fait en
   lazy pour ne pas casser les backends "local"/"hf_api" sur une machine
   Windows sans ce paquet.
+
+Quand Settings.MODEL_STACK == "goaicorp", tous les backends ci-dessus sont
+ignores au profit des modeles GO AI Corporation (licence CC-BY-NC 4.0) :
+  goaicorp/mos-asr  (Mooré)
+  goaicorp/dyu-asr  (Dioula)
+Charges via transformers pipeline("automatic-speech-recognition"), qui est
+agnostique de l'architecture (Whisper, Wav2Vec2, etc.) et s'adapte
+automatiquement au modele telecharge.
 Le contrat de transcribe(audio_path, lang) est identique dans tous les cas.
 """
 
@@ -35,6 +44,15 @@ logger = logging.getLogger("model-service.asr")
 
 MODEL_NAME = "facebook/mms-1b-all"
 HF_API_MODEL_NAME = "openai/whisper-large-v3"
+
+# Stack GO AI (MODEL_STACK=goaicorp) — modeles specialises par langue
+# Licence CC-BY-NC 4.0 (contact commercial : aristide@goaicorporation.org)
+GOAICORP_ASR_MODEL_NAMES = {
+    "mos": "goaicorp/mos-asr",
+    "dyu": "goaicorp/dyu-asr",
+    # Pas de modele GO AI pour le français : fallback sur Whisper (hf_api)
+    "fra": "openai/whisper-large-v3",
+}
 
 MMS_LANG_CODES = {
     "dyu": "dyu",
@@ -62,6 +80,15 @@ class ASR:
     def __init__(self) -> None:
         settings = get_settings()
         self.backend = settings.ASR_BACKEND
+        self._stack = settings.MODEL_STACK
+        self._hf_token = settings.HF_TOKEN
+
+        # La stack goaicorp remplace tous les backends ASR_BACKEND par les
+        # modeles GO AI, charges via pipeline() au premier appel (lazy).
+        if self._stack == "goaicorp":
+            self._goaicorp_pipelines: dict[str, object] = {}
+            logger.info("ASR: stack=goaicorp (CC-BY-NC 4.0, GO AI Corporation)")
+            return
 
         if self.backend == "hf_api":
             self._client = InferenceClient(model=HF_API_MODEL_NAME, token=settings.HF_TOKEN)
@@ -137,7 +164,38 @@ class ASR:
         )
         return result[0].strip()
 
+    def _get_goaicorp_pipeline(self, lang: str) -> object:
+        """Charge et met en cache le pipeline ASR GO AI pour la langue donnee.
+
+        pipeline("automatic-speech-recognition") est agnostique de
+        l'architecture : fonctionne pour Whisper, Wav2Vec2, Conformer, etc.
+        Le HF_TOKEN est necessaire pour les repos gated.
+        """
+        if lang not in self._goaicorp_pipelines:
+            repo_id = GOAICORP_ASR_MODEL_NAMES.get(lang)
+            if repo_id is None:
+                raise ValueError(f"Langue non supportee par la stack goaicorp ASR: {lang}")
+            from transformers import pipeline as hf_pipeline
+            logger.info("Chargement pipeline GO AI ASR %s (lang=%s)...", repo_id, lang)
+            device = 0 if torch.cuda.is_available() else -1
+            self._goaicorp_pipelines[lang] = hf_pipeline(
+                "automatic-speech-recognition",
+                model=repo_id,
+                token=self._hf_token,
+                device=device,
+            )
+            logger.info("Pipeline GO AI ASR %s charge.", repo_id)
+        return self._goaicorp_pipelines[lang]
+
+    def _transcribe_goaicorp(self, audio_path: str, lang: str) -> str:
+        pipe = self._get_goaicorp_pipeline(lang)
+        result = pipe(audio_path, return_timestamps=False)
+        return result["text"].strip() if isinstance(result, dict) else str(result).strip()
+
     def transcribe(self, audio_path: str, lang: str) -> str:
+        if self._stack == "goaicorp":
+            return self._transcribe_goaicorp(audio_path, lang)
+
         if self.backend == "hf_api":
             return self._transcribe_hf_api(audio_path, lang)
 

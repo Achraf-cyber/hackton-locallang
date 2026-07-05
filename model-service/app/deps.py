@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     TTS_BACKEND_DYU: Literal["mms", "omnivoice"] = "mms"
     HF_TOKEN: str | None = None
 
+    # Stack de modeles : "old" (facebook/nllb + mms) ou "goaicorp" (modeles
+    # GO AI Corporation, licence CC-BY-NC 4.0, usage non-commercial). Defaut
+    # "old" = aucun changement en prod tant que la variable n'est pas positionnee
+    # explicitement a "goaicorp" dans les secrets du Space HF.
+    # NB : pour le TTS dioula, GO AI n'a PAS de modele ; les deux stacks
+    # utilisent donc facebook/mms-tts-dyu pour le dioula (voir tts.py).
+    MODEL_STACK: Literal["old", "goaicorp"] = "old"
+
 
 @lru_cache
 def get_settings() -> Settings:

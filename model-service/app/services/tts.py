@@ -1,5 +1,13 @@
 """Synthese vocale (text-to-speech) pour le Dioula et le Moore via les modeles
-VITS facebook/mms-tts-dyu et facebook/mms-tts-mos."""
+VITS facebook/mms-tts-dyu et facebook/mms-tts-mos.
+
+Quand Settings.MODEL_STACK == "goaicorp", le TTS Mooré utilise
+goaicorp/mos-tts (CC-BY-NC 4.0, GO AI Corporation) à la place de
+facebook/mms-tts-mos. L'architecture est identique (VITS/MMS-TTS) : le
+code de synthese est donc entierement reutilise, seul le repo_id change.
+
+LE TTS DIOULA NE CHANGE PAS : GO AI n'a pas de modele TTS pour le dioula.
+facebook/mms-tts-dyu est utilise dans les deux stacks."""
 
 import io
 import logging
@@ -18,6 +26,13 @@ logger = logging.getLogger("model-service.tts")
 MMS_TTS_MODEL_NAMES = {
     "dyu": "facebook/mms-tts-dyu",
     "mos": "facebook/mms-tts-mos",
+}
+
+# Stack GO AI pour le TTS Mooré uniquement (CC-BY-NC 4.0).
+# Le dioula utilise TOUJOURS facebook/mms-tts-dyu (pas de modele GO AI dyu).
+GOAICORP_TTS_MODEL_NAMES = {
+    "mos": "goaicorp/mos-tts",
+    "dyu": "facebook/mms-tts-dyu",  # inchangé : GO AI n'a pas de modèle dyu TTS
 }
 
 MAX_CHARS_BEFORE_SPLIT = 500
@@ -65,6 +80,19 @@ class TTS:
         self._tokenizers: dict[str, VitsTokenizer] = {}
         self._allowed_chars: dict[str, set[str]] = {}
         self._omnivoice_model = None
+        # MODEL_STACK determine quel repo_id utiliser pour le TTS Mooré.
+        # Le TTS dioula est toujours sur facebook/mms-tts-dyu (GO AI n'a
+        # pas de modele dyu TTS).
+        from app.deps import get_settings as _gs
+        _s = _gs()
+        self._tts_model_names = (
+            GOAICORP_TTS_MODEL_NAMES if _s.MODEL_STACK == "goaicorp"
+            else MMS_TTS_MODEL_NAMES
+        )
+        if _s.MODEL_STACK == "goaicorp":
+            logger.info("TTS: stack=goaicorp pour Mooré (goaicorp/mos-tts, CC-BY-NC 4.0) ; "
+                        "Dioula inchangé (facebook/mms-tts-dyu)")
+        self._hf_token = _s.HF_TOKEN
 
     @classmethod
     def get_instance(cls) -> "TTS":
@@ -73,12 +101,16 @@ class TTS:
         return cls._instance
 
     def _get_model(self, lang: str) -> tuple[VitsModel, VitsTokenizer]:
-        if lang not in MMS_TTS_MODEL_NAMES:
+        if lang not in self._tts_model_names:
             raise ValueError(f"Langue non supportee: {lang}")
         if lang not in self._models:
-            model_name = MMS_TTS_MODEL_NAMES[lang]
-            self._tokenizers[lang] = VitsTokenizer.from_pretrained(model_name)
-            model = VitsModel.from_pretrained(model_name).to(self.device)
+            model_name = self._tts_model_names[lang]
+            self._tokenizers[lang] = VitsTokenizer.from_pretrained(
+                model_name, token=self._hf_token
+            )
+            model = VitsModel.from_pretrained(
+                model_name, token=self._hf_token
+            ).to(self.device)
             model.eval()
             self._models[lang] = model
         return self._models[lang], self._tokenizers[lang]
