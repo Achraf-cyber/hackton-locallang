@@ -1,12 +1,14 @@
 """Synthese vocale (text-to-speech) pour le Dioula et le Moore via les modeles
 VITS facebook/mms-tts-dyu et facebook/mms-tts-mos."""
 
+import io
 import logging
 import re
 
 import numpy as np
 import soundfile as sf
 import torch
+from pydub import AudioSegment
 from transformers import VitsModel, VitsTokenizer
 
 from app.deps import get_settings
@@ -200,6 +202,21 @@ class TTS:
             )
         return self._omnivoice_model
 
+    def _write_ogg_opus(self, audio: np.ndarray, sample_rate: int, output_path: str) -> None:
+        """Encode la forme d'onde en OGG/Opus, le SEUL format que l'API Bot
+        Telegram accepte de façon fiable pour un message vocal (sendVoice
+        exige .ogg/OPUS ; sendAudio exige MP3/M4A -- ni l'un ni l'autre
+        n'accepte du WAV brut, ce qu'on envoyait avant : Telegram acceptait
+        l'upload mais le fichier restait illisible côté client, aussi bien
+        dans l'appli que si l'usager le sauvegardait et l'ouvrait ailleurs).
+        Passe par un WAV en mémoire (soundfile) puis pydub/ffmpeg pour
+        l'encodage Opus (ffmpeg est déjà installé dans l'image Docker)."""
+        wav_buffer = io.BytesIO()
+        sf.write(wav_buffer, audio, sample_rate, format="WAV")
+        wav_buffer.seek(0)
+        segment = AudioSegment.from_file(wav_buffer, format="wav")
+        segment.export(output_path, format="ogg", codec="libopus", bitrate="32k")
+
     def speak(self, text: str, lang: str, output_path: str) -> str:
         settings = get_settings()
         text = _normalize_allcaps_names(text)
@@ -212,7 +229,7 @@ class TTS:
                     instruct="female, young adult, clear speech, neutral accent"
                 )
                 # OmniVoice retourne du 24 kHz
-                sf.write(output_path, audio[0], 24000)
+                self._write_ogg_opus(audio[0], 24000, output_path)
                 return output_path
             except Exception as e:
                 logger.warning("OmniVoice non disponible pour dyu, fallback sur MMS-TTS: %s", e)
@@ -232,11 +249,11 @@ class TTS:
                 waveforms.append(silence)
 
         audio = np.concatenate(waveforms) if len(waveforms) > 1 else waveforms[0]
-        sf.write(output_path, audio, sample_rate)
+        self._write_ogg_opus(audio, sample_rate, output_path)
         return output_path
 
 
 if __name__ == "__main__":
     tts = TTS.get_instance()
-    out = tts.speak("I ni ce. An be here?", lang="dyu", output_path="demo_dyu.wav")
+    out = tts.speak("I ni ce. An be here?", lang="dyu", output_path="demo_dyu.ogg")
     print(f"Audio genere: {out}")

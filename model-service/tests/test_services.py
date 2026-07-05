@@ -107,5 +107,5 @@ def test_tts_speak_numbered_list_real():
         "dossier officiel aupres du caissier designe et conservez precieusement "
         "votre recu de paiement."
     )
-    out = tts.speak(text, lang="dyu", output_path="test_numbered_list.wav")
-    assert out == "test_numbered_list.wav"
+    out = tts.speak(text, lang="dyu", output_path="test_numbered_list.ogg")
+    assert out == "test_numbered_list.ogg"

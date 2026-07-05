@@ -38,7 +38,7 @@ settings = get_settings()
 MEDIA_DIR = Path(__file__).resolve().parent.parent / "media"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-# /localize et /speak ecrivent un .wav unique (uuid) par requete dans
+# /localize et /speak ecrivent un .ogg unique (uuid) par requete dans
 # MEDIA_DIR et ne le suppriment JAMAIS (le client le recupere de facon
 # asynchrone via audio_url, donc on ne peut pas le supprimer juste apres la
 # reponse) : sans purge, le disque du Space se remplit indefiniment. On
@@ -248,7 +248,7 @@ def localize(payload: LocalizeRequest) -> LocalizeResponse:
     translated = translator.translate(payload.text_fr, src="fr", tgt=payload.lang)
 
     tts = TTS.get_instance()
-    filename = f"{uuid.uuid4()}.wav"
+    filename = f"{uuid.uuid4()}.ogg"
     output_path = MEDIA_DIR / filename
     tts.speak(translated, lang=payload.lang, output_path=str(output_path))
 
@@ -268,7 +268,7 @@ def speak(payload: SpeakRequest) -> SpeakResponse:
     start = time.perf_counter()
 
     tts = TTS.get_instance()
-    filename = f"{uuid.uuid4()}.wav"
+    filename = f"{uuid.uuid4()}.ogg"
     output_path = MEDIA_DIR / filename
     tts.speak(payload.text, lang=payload.lang, output_path=str(output_path))
 
