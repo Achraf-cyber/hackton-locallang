@@ -58,6 +58,7 @@ import {
   getCasierSession,
   handleCasierDocument,
   handleCasierTextAnswer,
+  cancelCasierSession,
   CASIER_ASK_DOC1,
   type CasierStepResult,
 } from "./casierFlow";
@@ -377,6 +378,10 @@ export function getBot(): Bot {
 
   // /start — bilingue + clavier + 2 audios (voir sendLanguagePicker)
   bot.command("start", async (ctx) => {
+    // Redémarrer abandonne tout flux "casier judiciaire" en cours : sinon la
+    // session en mémoire reste active et intercepte les prochains messages
+    // (photo/document/texte) comme si l'usager était encore dedans.
+    if (ctx.chat) cancelCasierSession(ctx.chat.id);
     await sendLanguagePicker(ctx);
   });
 
@@ -614,7 +619,11 @@ export function getBot(): Bot {
 
     // Une photo reçue pendant un flux "casier judiciaire" en cours est un
     // document d'identité à extraire, pas une demande d'explication générique.
+    // Consomme le quota comme n'importe quel autre traitement de document
+    // (appel Gemini) : sans ce check, le flux casier serait illimité et
+    // gratuit alors que /explainPhoto et /explainDoc sont limités.
     if (hasActiveCasierSession(ctx.chat.id)) {
+      if (!(await checkQuotaOrReply(ctx, lang))) return;
       try {
         const largest = ctx.message.photo.at(-1)!;
         const buffer = await downloadTelegramFile(bot, largest.file_id);
@@ -675,8 +684,10 @@ export function getBot(): Bot {
     }
 
     // Document reçu pendant un flux "casier judiciaire" en cours : à extraire,
-    // pas à expliquer (voir même branche sur message:photo ci-dessus).
+    // pas à expliquer (voir même branche sur message:photo ci-dessus, y compris
+    // pour la consommation de quota).
     if (hasActiveCasierSession(ctx.chat.id)) {
+      if (!(await checkQuotaOrReply(ctx, lang))) return;
       try {
         const buffer = await downloadTelegramFile(bot, ctx.message.document.file_id);
         const result = await handleCasierDocument(
@@ -741,14 +752,21 @@ export function getBot(): Bot {
 
     // Réponse à une question du flux "casier judiciaire" (voir casierFlow.ts)
     const casierSession = getCasierSession(ctx.chat.id);
-    if (casierSession?.step === "awaiting_field") {
-      try {
-        const result = await handleCasierTextAnswer(ctx.chat.id, ctx.message.text);
-        await replyToCasierStep(ctx, result);
-      } catch (err) {
-        await replyToCasierError(ctx, err);
+    if (casierSession) {
+      if (ctx.message.text.trim().toUpperCase() === "ANNULER") {
+        cancelCasierSession(ctx.chat.id);
+        await ctx.reply("Demande de casier judiciaire annulée.");
+        return;
       }
-      return;
+      if (casierSession.step === "awaiting_field") {
+        try {
+          const result = await handleCasierTextAnswer(ctx.chat.id, ctx.message.text);
+          await replyToCasierStep(ctx, result);
+        } catch (err) {
+          await replyToCasierError(ctx, err);
+        }
+        return;
+      }
     }
 
     // Commande textuelle "PAYER"

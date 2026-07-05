@@ -23,6 +23,16 @@ function utcMidnight(): Date {
 /**
  * Vérifie que `user` peut effectuer une requête, et consomme immédiatement
  * son quota (compteur gratuit puis crédits payants) si c'est le cas.
+ *
+ * Tout est fait via `updateMany` avec une condition `where` (increment/
+ * decrement conditionnels atomiques), PAS via un read-then-write classique
+ * (lire requestsToday, comparer en JS, puis écrire séparément) : deux
+ * requêtes concurrentes du même utilisateur liraient toutes les deux la
+ * même valeur avant que l'une ou l'autre n'écrive, et pourraient donc
+ * toutes les deux passer le contrôle en ne comptant qu'un incrément au
+ * final — laissant passer une requête de trop au-delà de la limite. Le
+ * `count` de lignes affectées par `updateMany` dit si CET appel a
+ * effectivement pu consommer le quota, sans cette fenêtre de course.
  */
 export async function checkAndConsumeQuota(user: User): Promise<QuotaCheckResult> {
   if (user.organizationId) {
@@ -30,45 +40,32 @@ export async function checkAndConsumeQuota(user: User): Promise<QuotaCheckResult
   }
 
   const { DAILY_FREE_LIMIT } = getEnv();
+  const midnight = utcMidnight();
 
-  let requestsToday = user.requestsToday;
-  let quotaResetAt = user.quotaResetAt;
-  const needsReset = quotaResetAt < utcMidnight();
-
-  if (needsReset) {
-    requestsToday = 0;
-    quotaResetAt = new Date();
+  if (user.quotaResetAt < midnight) {
+    // Reset conditionnel : le `where` sur quotaResetAt évite qu'un reset
+    // concurrent ne réapplique le reset après qu'une autre requête l'a
+    // déjà fait (et déjà potentiellement incrémenté requestsToday derrière).
+    await prisma.user.updateMany({
+      where: { id: user.id, quotaResetAt: { lt: midnight } },
+      data: { requestsToday: 0, quotaResetAt: new Date() },
+    });
   }
 
-  if (requestsToday < DAILY_FREE_LIMIT) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        requestsToday: requestsToday + 1,
-        quotaResetAt,
-      },
-    });
+  const freeResult = await prisma.user.updateMany({
+    where: { id: user.id, requestsToday: { lt: DAILY_FREE_LIMIT } },
+    data: { requestsToday: { increment: 1 } },
+  });
+  if (freeResult.count > 0) {
     return { allowed: true };
   }
 
-  if (user.paidCreditsLeft > 0) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        paidCreditsLeft: { decrement: 1 },
-        quotaResetAt,
-      },
-    });
+  const paidResult = await prisma.user.updateMany({
+    where: { id: user.id, paidCreditsLeft: { gt: 0 } },
+    data: { paidCreditsLeft: { decrement: 1 } },
+  });
+  if (paidResult.count > 0) {
     return { allowed: true };
-  }
-
-  if (needsReset) {
-    // Le quota a été remis à zéro mais reste épuisé dans le même appel
-    // (DAILY_FREE_LIMIT <= 0, cas limite) : on persiste quand même le reset.
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { requestsToday, quotaResetAt },
-    });
   }
 
   return { allowed: false, reason: "quota_reached" };

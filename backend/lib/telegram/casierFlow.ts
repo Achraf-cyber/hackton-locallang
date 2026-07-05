@@ -35,7 +35,13 @@ interface CasierSession {
   pendingField: FieldSpec | null;
   doc1: CasierDocument | null;
   doc2: CasierDocument | null;
+  lastActivityAt: number;
 }
+
+// Une session abandonnée (usager qui ne répond plus) ne doit ni fuiter en
+// mémoire indéfiniment, ni intercepter éternellement les photos/documents
+// suivants de ce chat comme s'ils faisaient partie du flux casier.
+const SESSION_TTL_MS = 20 * 60 * 1000;
 
 const sessions = new Map<string, CasierSession>();
 
@@ -43,12 +49,24 @@ function sessionKey(chatId: number | string): string {
   return String(chatId);
 }
 
+/** Purge la session si elle a expiré (inactive depuis SESSION_TTL_MS). */
+function pruneIfExpired(key: string): void {
+  const session = sessions.get(key);
+  if (session && Date.now() - session.lastActivityAt > SESSION_TTL_MS) {
+    sessions.delete(key);
+  }
+}
+
 export function hasActiveCasierSession(chatId: number | string): boolean {
-  return sessions.has(sessionKey(chatId));
+  const key = sessionKey(chatId);
+  pruneIfExpired(key);
+  return sessions.has(key);
 }
 
 export function getCasierSession(chatId: number | string): CasierSession | undefined {
-  return sessions.get(sessionKey(chatId));
+  const key = sessionKey(chatId);
+  pruneIfExpired(key);
+  return sessions.get(key);
 }
 
 export function startCasierSession(chatId: number | string, lang: LocalLang): void {
@@ -59,15 +77,25 @@ export function startCasierSession(chatId: number | string, lang: LocalLang): vo
     pendingField: null,
     doc1: null,
     doc2: null,
+    lastActivityAt: Date.now(),
   });
+}
+
+/** Annule une session en cours (ex. sur /start ou /annuler) — no-op si aucune session active. */
+export function cancelCasierSession(chatId: number | string): void {
+  clearSession(chatId);
 }
 
 function clearSession(chatId: number | string): void {
   sessions.delete(sessionKey(chatId));
 }
 
+function touch(session: CasierSession): void {
+  session.lastActivityAt = Date.now();
+}
+
 export const CASIER_ASK_DOC1 =
-  "Pour votre demande de casier judiciaire, envoyez d'abord une photo ou un PDF de votre extrait/jugement supplétif d'acte de naissance.";
+  "Pour votre demande de casier judiciaire, envoyez d'abord une photo ou un PDF de votre extrait/jugement supplétif d'acte de naissance.\n(Répondez ANNULER à tout moment pour arrêter cette démarche.)";
 export const CASIER_ASK_DOC2 =
   "Merci. Envoyez maintenant une photo ou un PDF de votre CNIB ou passeport.";
 
@@ -123,6 +151,7 @@ export async function handleCasierDocument(
 ): Promise<CasierStepResult> {
   const session = sessions.get(sessionKey(chatId));
   if (!session) throw new Error("Aucune session casier active pour ce chat.");
+  touch(session);
 
   if (session.step === "awaiting_doc1") {
     session.doc1 = { buffer, mimeType, fileName };
@@ -151,6 +180,7 @@ export async function handleCasierTextAnswer(
   if (!session || session.step !== "awaiting_field" || !session.pendingField) {
     throw new Error("Aucun champ en attente de réponse pour ce chat.");
   }
+  touch(session);
 
   const spec = session.pendingField;
   const matched = matchFieldAnswer(spec, rawAnswer, session.fields);

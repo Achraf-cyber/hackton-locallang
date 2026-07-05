@@ -26,15 +26,27 @@ export async function resolveUser(channel: IdentityChannel, value: string): Prom
     return existing.user;
   }
 
-  const created = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({ data: {} });
-    await tx.userIdentity.create({
-      data: { userId: user.id, channel, value },
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({ data: {} });
+      await tx.userIdentity.create({
+        data: { userId: user.id, channel, value },
+      });
+      return user;
     });
-    return user;
-  });
-
-  return created;
+  } catch (err) {
+    // Deux requêtes concurrentes du même nouveau contact (ex. retry de
+    // webhook Telegram) peuvent toutes les deux échouer le `findUnique`
+    // ci-dessus avant qu'aucune n'ait écrit, puis se marcher dessus sur la
+    // contrainte unique (channel, value) : celle qui perd la course
+    // récupère l'utilisateur créé par l'autre au lieu de planter.
+    const retry = await prisma.userIdentity.findUnique({
+      where: { channel_value: { channel, value } },
+      include: { user: true },
+    });
+    if (retry) return retry.user;
+    throw err;
+  }
 }
 
 /**

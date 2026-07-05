@@ -21,5 +21,11 @@ export function handleApiError(context: string, err: unknown): Response {
     );
   }
 
-  return Response.json({ error: (err as Error).message }, { status: 502 });
+  // Message générique côté client : la cause réelle (potentiellement une
+  // erreur Prisma/DB ou un chemin de fichier interne) est déjà loguée
+  // ci-dessus, mais ne doit pas fuiter vers l'usager.
+  return Response.json(
+    { error: "Une erreur est survenue lors du traitement de votre demande. Réessayez dans un instant." },
+    { status: 502 },
+  );
 }
