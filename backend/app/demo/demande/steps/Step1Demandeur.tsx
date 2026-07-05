@@ -34,41 +34,62 @@ export function Step1Demandeur() {
       .then((data) => setRegions(data.regions ?? []));
   }, []);
 
-  // Cascade region -> province.
+  // Cascade region -> province. Garde "ignore" : si l'usager change de
+  // région avant que la réponse précédente n'arrive (ex. double-clic rapide
+  // région A -> B -> A), une réponse plus lente pour un choix déjà remplacé
+  // pourrait sinon écraser la liste correcte avec des options périmées.
   useEffect(() => {
     if (!demandeur.regionNaissance) {
       setProvinces([]);
       return;
     }
+    let ignore = false;
     fetch(`/api/demo/localites?region=${demandeur.regionNaissance}`)
       .then((res) => res.json())
-      .then((data) => setProvinces(data.provinces ?? []));
+      .then((data) => {
+        if (!ignore) setProvinces(data.provinces ?? []);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [demandeur.regionNaissance]);
 
-  // Cascade province -> commune.
+  // Cascade province -> commune (même garde).
   useEffect(() => {
     if (!demandeur.regionNaissance || !demandeur.provinceNaissance) {
       setCommunes([]);
       return;
     }
+    let ignore = false;
     fetch(
       `/api/demo/localites?region=${demandeur.regionNaissance}&province=${demandeur.provinceNaissance}`,
     )
       .then((res) => res.json())
-      .then((data) => setCommunes(data.communes ?? []));
+      .then((data) => {
+        if (!ignore) setCommunes(data.communes ?? []);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [demandeur.regionNaissance, demandeur.provinceNaissance]);
 
-  // Cascade commune -> arrondissement (optionnel).
+  // Cascade commune -> arrondissement, optionnel (même garde).
   useEffect(() => {
     if (!demandeur.regionNaissance || !demandeur.provinceNaissance || !demandeur.communeNaissance) {
       setArrondissements([]);
       return;
     }
+    let ignore = false;
     fetch(
       `/api/demo/localites?region=${demandeur.regionNaissance}&province=${demandeur.provinceNaissance}&commune=${demandeur.communeNaissance}`,
     )
       .then((res) => res.json())
-      .then((data) => setArrondissements(data.arrondissements ?? []));
+      .then((data) => {
+        if (!ignore) setArrondissements(data.arrondissements ?? []);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [demandeur.regionNaissance, demandeur.provinceNaissance, demandeur.communeNaissance]);
 
   const handleRegionChange = (value: string) => {
