@@ -248,7 +248,7 @@ def localize(payload: LocalizeRequest) -> LocalizeResponse:
     translated = translator.translate(payload.text_fr, src="fr", tgt=payload.lang)
 
     tts = TTS.get_instance()
-    filename = f"{uuid.uuid4()}.ogg"
+    filename = f"{uuid.uuid4()}.ogg"  # OGG/Opus, pas WAV -- voir tts.py _write_ogg_opus()
     output_path = MEDIA_DIR / filename
     tts.speak(translated, lang=payload.lang, output_path=str(output_path))
 
@@ -268,7 +268,7 @@ def speak(payload: SpeakRequest) -> SpeakResponse:
     start = time.perf_counter()
 
     tts = TTS.get_instance()
-    filename = f"{uuid.uuid4()}.ogg"
+    filename = f"{uuid.uuid4()}.ogg"  # OGG/Opus, pas WAV -- voir tts.py _write_ogg_opus()
     output_path = MEDIA_DIR / filename
     tts.speak(payload.text, lang=payload.lang, output_path=str(output_path))
 
