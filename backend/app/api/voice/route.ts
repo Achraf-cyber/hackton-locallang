@@ -12,6 +12,13 @@ const langSchema = z.enum(["dyu", "mos"], {
   message: "lang doit être 'dyu' ou 'mos'",
 });
 
+// Contrairement à app/api/photo/route.ts (limite déjà en place), ce fichier
+// n'avait aucune limite de taille : un fichier audio arbitrairement gros
+// était transmis tel quel au service ASR (coût, temps de traitement, risque
+// d'abus). Même ordre de grandeur que la photo, un peu plus large car un
+// message vocal légitime peut dépasser quelques minutes.
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
 /**
  * Résout l'utilisateur web courant à partir du cookie de session.
  * Anonyme (pas de cookie valide) -> pseudo-utilisateur non persisté, quota
@@ -88,6 +95,9 @@ export async function POST(request: NextRequest) {
   const file = form.get("file");
   if (!(file instanceof Blob)) {
     return Response.json({ error: "Fichier audio manquant (champ 'file')." }, { status: 400 });
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    return Response.json({ error: "Fichier audio trop volumineux (20 Mo maximum)." }, { status: 400 });
   }
 
   const filename = file instanceof File && file.name ? file.name : "audio.webm";
