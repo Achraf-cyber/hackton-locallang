@@ -9,6 +9,11 @@ const envSchema = z.object({
   // chacun. Optionnel : si absent, /transcribe reste sur MODEL_SERVICE_URL
   // (mode "un seul Space", ex. en local).
   ASR_SERVICE_URL: z.string().url("ASR_SERVICE_URL doit être une URL valide").optional(),
+  // Space HF dedie a OmniVoice (voir model-service/Dockerfile.omnivoice),
+  // separe du Space traduction (NLLB-200-3.3B) : les deux ensemble depassaient
+  // 16 Go de RAM et faisaient crasher le Space (OOM). Optionnel : si absent,
+  // /speak reste sur MODEL_SERVICE_URL (mode "un seul Space", ex. en local).
+  TTS_SERVICE_URL: z.string().url("TTS_SERVICE_URL doit être une URL valide").optional(),
   TELEGRAM_TOKEN: z.string().optional(),
   DATABASE_URL: z.string().min(1, "DATABASE_URL manquant"),
   DAILY_FREE_LIMIT: z.coerce.number().int().positive().default(8),

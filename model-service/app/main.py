@@ -66,6 +66,15 @@ class LocalizeResponse(BaseModel):
     audio_url: str
 
 
+class TranslateRequest(BaseModel):
+    text_fr: str
+    lang: Literal["dyu", "mos"]
+
+
+class TranslateResponse(BaseModel):
+    translated: str
+
+
 class ToFrenchRequest(BaseModel):
     text: str
     lang: Literal["dyu", "mos"]
@@ -173,6 +182,22 @@ async def transcribe(
     logger.info("POST /transcribe lang=%s duration=%.3fs", lang, elapsed)
 
     return TranscribeResponse(text=text)
+
+
+@app.post("/translate", response_model=TranslateResponse)
+def translate(payload: TranslateRequest) -> TranslateResponse:
+    """Traduction PURE, sans TTS : utilise quand la synthese vocale est geree
+    par un Space separe (voir Dockerfile.omnivoice), pour ne pas charger NLLB
+    et un modele TTS lourd dans le meme processus/Space."""
+    start = time.perf_counter()
+
+    translator = Translator.get_instance()
+    translated = translator.translate(payload.text_fr, src="fr", tgt=payload.lang)
+
+    elapsed = time.perf_counter() - start
+    logger.info("POST /translate lang=%s duration=%.3fs", payload.lang, elapsed)
+
+    return TranslateResponse(translated=translated)
 
 
 @app.post("/localize", response_model=LocalizeResponse)
