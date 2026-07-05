@@ -12,7 +12,8 @@ env:
   # Space Docker separe, dedie a l'automatisation Playwright du site DEMO
   # "e-casier" (voir automation-service/README.md) -- a creer une fois sur
   # huggingface.co/new-space (sdk: Docker) avant le premier run de ce workflow.
-  HF_SPACE: AchrafCyber/automation-service
+  # Remplacez par le nom correct si vous créez ce space d'automatisation
+  HF_SPACE: AchrafCyber/automation-service-disabled
 
 jobs:
   deploy:
