@@ -8,8 +8,9 @@
  */
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText } from "ai";
+import { generateObject, generateText } from "ai";
 import type { LanguageModel, ModelMessage } from "ai";
+import { z } from "zod";
 import { getEnv } from "./env";
 import type { LocalLang } from "./modelService";
 
@@ -85,7 +86,12 @@ const MT_FRIENDLY_RULE =
   "plutot que subordonnees. N'utilise aucune expression idiomatique, " +
   "metaphore ou tournure figuree (pas de \"il ne faut pas tarder\", " +
   "\"du jour au lendemain\", etc.) : dis les choses de maniere litterale. " +
-  "N'utilise aucune abreviation ni sigle sans l'ecrire en toutes lettres.";
+  "N'utilise aucune abreviation ni sigle sans l'ecrire en toutes lettres. " +
+  "N'utilise JAMAIS les mots \"témoin\"/\"témoins\" (le modele de traduction " +
+  "les confond systematiquement avec \"Témoin de Jéhovah\" et repete ce mot " +
+  "religieux partout dans le texte traduit) : remplace par une formulation " +
+  "concrete selon le contexte, par exemple \"la personne qui a vu/confirme " +
+  "cela\" ou \"la personne qui a signe comme preuve\".";
 
 const SIMPLIFY_SYSTEM = `Tu es un médiateur administratif ouest-africain. Tu réécris un texte
 administratif en français très simple, destiné à une personne peu lettrée.
@@ -262,5 +268,68 @@ export async function readDocumentImage(
     return text.trim();
   } catch (err) {
     throw new LLMError("Échec de la lecture du document.", err);
+  }
+}
+
+/**
+ * Champs extractibles d'un acte de naissance ou d'une pièce d'identité
+ * (CNIB/passeport), en français standard. Sous-ensemble volontaire de
+ * DemandeurState (voir backend/lib/demo/types.ts) : seuls les champs
+ * effectivement lisibles sur ces documents sont ici — le reste (domicile,
+ * profession, téléphone, situation matrimoniale...) doit être demandé à
+ * l'usager, PAS deviné.
+ */
+export const ExtractedIdentityFieldsSchema = z.object({
+  nom: z.string().nullable().describe("Nom de famille, tel qu'écrit sur le document"),
+  prenoms: z.string().nullable().describe("Prénom(s), tel qu'écrit sur le document"),
+  genre: z.enum(["M", "F"]).nullable(),
+  dateNaissance: z.string().nullable().describe("Format AAAA-MM-JJ si déductible, sinon tel quel"),
+  lieuNaissance: z.string().nullable(),
+  nationalite: z.string().nullable(),
+  typePiece: z.enum(["cnib", "passeport"]).nullable(),
+  numeroPiece: z.string().nullable().describe("Numéro de la CNIB ou du passeport"),
+  numeroActeNaissance: z.string().nullable(),
+  nomPere: z.string().nullable(),
+  prenomsPere: z.string().nullable(),
+  nomMere: z.string().nullable(),
+  prenomsMere: z.string().nullable(),
+});
+export type ExtractedIdentityFields = z.infer<typeof ExtractedIdentityFieldsSchema>;
+
+const EXTRACT_IDENTITY_SYSTEM = `Tu extrais des informations d'un document d'identité ou d'état civil
+(acte de naissance, jugement supplétif, CNIB, ou passeport) d'Afrique de l'Ouest.
+Renseigne uniquement les champs que tu peux LIRE avec certitude sur le document.
+Si un champ n'est pas présent ou illisible, renvoie null pour ce champ — n'invente
+et ne devine JAMAIS une valeur.`;
+
+/**
+ * Extrait les champs d'identité lisibles sur un document (acte de naissance
+ * ou pièce d'identité). Utilisé pour pré-remplir le formulaire de demande
+ * (voir backend/lib/demo/types.ts DemandeurState) sans reposer entièrement
+ * sur la saisie manuelle de l'usager.
+ */
+export async function extractIdentityFields(
+  fileBuffer: Buffer,
+  mimeType: string,
+): Promise<ExtractedIdentityFields> {
+  try {
+    const { object } = await generateObject({
+      model: model(),
+      schema: ExtractedIdentityFieldsSchema,
+      system: EXTRACT_IDENTITY_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Extrait les informations de ce document." },
+            { type: "file", mediaType: mimeType, data: fileBuffer },
+          ],
+        },
+      ],
+      temperature: 0,
+    });
+    return object;
+  } catch (err) {
+    throw new LLMError("Échec de l'extraction des informations du document.", err);
   }
 }

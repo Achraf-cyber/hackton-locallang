@@ -1,0 +1,27 @@
+{
+  "demandeur": {
+    "nom": "Simbre",
+    "prenoms": "Achraf",
+    "genre": "M",
+    "dateNaissance": "2005-04-05",
+    "lieuNaissance": "Ouagadougou",
+    "domicile": "Ouagadougou, secteur 15",
+    "situationMatrimoniale": "celibataire",
+    "profession": "Étudiant",
+    "telephone": "70000000",
+    "paysNaissance": "BF",
+    "nationalite": "burkinabe",
+    "regionNaissance": "centre",
+    "provinceNaissance": "kadiogo",
+    "communeNaissance": "ouagadougou",
+    "arrondissementNaissance": "bogodogo",
+    "typePiece": "cnib",
+    "numeroPiece": "B1234567"
+  },
+  "filiation": {
+    "nomPere": "Simbre",
+    "prenomsPere": "Daouda",
+    "nomMere": "Sana",
+    "prenomsMere": "Bintou"
+  }
+}

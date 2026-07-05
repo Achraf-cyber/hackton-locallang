@@ -1,0 +1,419 @@
+.banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: repeating-linear-gradient(
+    45deg,
+    #b91c1c,
+    #b91c1c 12px,
+    #7f1d1d 12px,
+    #7f1d1d 24px
+  );
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+}
+
+.page {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+  font-family: system-ui, sans-serif;
+  color: #1f2937;
+  background: #fff;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.header h1 {
+  font-size: 1.25rem;
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #6b7280;
+  flex-wrap: wrap;
+}
+
+.stepBar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.stepItem {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.stepCircle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: 2px solid #d1d5db;
+  color: #9ca3af;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.stepCircleDone {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+.stepCircleDoing {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.stepLabel {
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.stepLabelActive {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.stepConnector {
+  flex: 1;
+  height: 2px;
+  background: #d1d5db;
+  margin: 0 0.5rem;
+}
+
+.stepConnectorDone {
+  background: #16a34a;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.field input,
+.field select {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+}
+
+.actions button {
+  padding: 0.6rem 1.3rem;
+  border-radius: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.primaryButton {
+  background: #2563eb;
+  color: #fff;
+}
+
+.primaryButton:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: #e5e7eb;
+  color: #1f2937;
+}
+
+.recapTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.recapTable td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.recapTable td:first-child {
+  color: #6b7280;
+  width: 45%;
+}
+
+.docRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #d1d5db;
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.docRowActions button {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.confirmation {
+  border: 1px solid #16a34a;
+  background: #f0fdf4;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+/* ---- Chrome du site (header/footer, presents sur toutes les pages /demo/*) ---- */
+
+.demoRoot {
+  min-height: 100vh;
+  background: #f8fafc;
+  color-scheme: light;
+}
+
+.siteHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  font-family: system-ui, sans-serif;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: #fff;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #1e293b;
+  text-decoration: none;
+}
+
+.brandIcon {
+  font-size: 1.4rem;
+}
+
+.siteNav {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.navButton {
+  background: #1e3a8a;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.navButtonGhost {
+  background: #f1f5f9;
+  color: #1e3a8a;
+}
+
+.navLink {
+  color: #4b5563;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.navLink:hover {
+  text-decoration: underline;
+}
+
+.siteFooter {
+  border-top: 1px solid #e5e7eb;
+  margin-top: 3rem;
+  padding: 2rem 1.5rem;
+  font-family: system-ui, sans-serif;
+  background: #fff;
+}
+
+.infoCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.infoCard {
+  text-align: center;
+  padding: 1rem;
+}
+
+.infoCardIcon {
+  font-size: 1.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.infoCardTitle {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #1e293b;
+}
+
+.infoCardText {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 0.3rem;
+}
+
+.footerNote {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-top: 2rem;
+}
+
+/* ---- Page d'accueil (landing) ---- */
+
+.landingPage {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  font-family: system-ui, sans-serif;
+}
+
+.hero {
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.72)),
+    repeating-linear-gradient(135deg, #334155, #334155 10px, #1e293b 10px, #1e293b 20px);
+  color: #fff;
+  border-radius: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.75rem;
+}
+
+.hero p {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  max-width: 640px;
+  margin: 0.4rem auto;
+}
+
+.heroWarning {
+  color: #fde047 !important;
+  font-weight: 600;
+}
+
+.landingCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.landingCard {
+  background: #1e3a8a;
+  color: #fff;
+  border-radius: 0.75rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  text-decoration: none;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.landingCardGhost {
+  background: #f1f5f9;
+  color: #1e3a8a;
+}
+
+.landingCardIcon {
+  font-size: 2rem;
+}
+
+.landingSectionTitle {
+  text-align: center;
+  color: #1e293b;
+  font-size: 1.1rem;
+  margin: 2.5rem 0 1.5rem;
+}
+
+.processSteps {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.processStep {
+  flex: 1;
+  min-width: 90px;
+  text-align: center;
+}
+
+.processStepDot {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: #93c5fd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  margin: 0 auto 0.5rem;
+}
+
+.processStepLabel {
+  font-size: 0.75rem;
+  color: #4b5563;
+}

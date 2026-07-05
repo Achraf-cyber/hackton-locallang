@@ -52,6 +52,15 @@ import {
   govDocUrl,
 } from "../messages";
 import type { GovDocKey } from "../messages";
+import {
+  startCasierSession,
+  hasActiveCasierSession,
+  getCasierSession,
+  handleCasierDocument,
+  handleCasierTextAnswer,
+  CASIER_ASK_DOC1,
+  type CasierStepResult,
+} from "./casierFlow";
 
 let botInstance: Bot | null = null;
 
@@ -122,6 +131,77 @@ async function downloadAudio(audioUrl: string): Promise<Buffer> {
  * l'appelant doit envoyer le texte/clavier seulement APRÈS que cette
  * fonction se soit résolue (jamais en parallèle / fire-and-forget).
  */
+const DOCUMENT_SEND_MAX_ATTEMPTS = 3;
+const DOCUMENT_SEND_BASE_DELAY_MS = 1000;
+
+/**
+ * Envoie un document (ex. récépissé PDF) à l'usager avec retry + backoff.
+ * Contrairement à l'audio (sendMenuAudio, best-effort/silencieux), un
+ * document comme un récépissé officiel N'A PAS de repli acceptable si
+ * l'envoi échoue : l'usager doit le recevoir de façon fiable, donc on
+ * réessaie au lieu d'avaler l'erreur, et on la relance si tous les essais
+ * échouent (l'appelant doit alors prévenir l'usager explicitement).
+ */
+async function sendDocumentReliably(
+  ctx: Context,
+  buffer: Buffer,
+  filename: string,
+  caption?: string,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= DOCUMENT_SEND_MAX_ATTEMPTS; attempt++) {
+    try {
+      await ctx.replyWithDocument(new InputFile(buffer, filename), caption ? { caption } : undefined);
+      return;
+    } catch (err) {
+      lastError = err;
+      console.error(
+        `[telegram] envoi document "${filename}" tentative ${attempt}/${DOCUMENT_SEND_MAX_ATTEMPTS} échouée:`,
+        err,
+      );
+      if (attempt < DOCUMENT_SEND_MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, DOCUMENT_SEND_BASE_DELAY_MS * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Répond à l'usager après une étape du flux "casier judiciaire" (voir
+ * lib/telegram/casierFlow.ts) : soit une simple relance texte (prochaine
+ * question/document attendu), soit — quand `result.done` — la livraison
+ * fiable du récépissé PDF final.
+ */
+async function replyToCasierStep(ctx: Context, result: CasierStepResult): Promise<void> {
+  await ctx.reply(result.reply);
+  if (!result.done) return;
+
+  try {
+    await sendDocumentReliably(
+      ctx,
+      result.pdfBuffer,
+      `recepisse-${result.referenceCode}.pdf`,
+      `Récépissé (démo) — ${result.referenceCode}`,
+    );
+  } catch (err) {
+    console.error("[telegram] livraison du récépissé (flux casier) définitivement échouée:", err);
+    await ctx.reply(
+      `Le récépissé a été généré (référence ${result.referenceCode}) mais n'a pas pu vous être envoyé après ` +
+        `plusieurs tentatives. Utilisez /recepisse ${result.referenceCode} pour réessayer.`,
+    );
+  }
+}
+
+/** Gère une erreur survenue pendant une étape du flux casier (extraction, automatisation...). */
+async function replyToCasierError(ctx: Context, err: unknown): Promise<void> {
+  console.error("[telegram] erreur dans le flux casier judiciaire:", err);
+  await ctx.reply(
+    "Une erreur est survenue pendant le traitement de votre demande de casier judiciaire (démonstration). " +
+      "Réessayez, ou renvoyez le document si l'erreur persiste.",
+  );
+}
+
 async function sendMenuAudio(
   ctx: Context,
   key: string,
@@ -287,6 +367,7 @@ export function getBot(): Bot {
       { command: "start", description: "Démarrer / choisir la langue" },
       { command: "menu", description: "Afficher le menu principal" },
       { command: "document", description: "Demander un document officiel" },
+      { command: "recepisse", description: "(DEMO) Récupérer un récépissé par code" },
       { command: "lang", description: "Changer de langue" },
       { command: "help", description: "Aide" },
     ])
@@ -317,6 +398,44 @@ export function getBot(): Bot {
     await ctx.reply(tBilingual(GOV_DOC_MENU, lang), {
       reply_markup: govDocKeyboard(lang),
     });
+  });
+
+  // /recepisse <code> — (DEMO uniquement) va chercher le PDF de récépissé
+  // généré par le site DEMO "e-casier" (backend/app/demo/*) pour la demande
+  // <code>, et le livre à l'usager de façon fiable (voir sendDocumentReliably).
+  // Préfigure ce que fera l'orchestrateur une fois le flux "upload documents
+  // -> extraction -> questions -> automatisation -> récépissé" branché
+  // bout-à-bout (voir memory/demo-ecasier-*.md pour le reste du plan).
+  bot.command("recepisse", async (ctx) => {
+    const code = ctx.match?.toString().trim();
+    if (!code) {
+      await ctx.reply("Usage : /recepisse DEMO-2026-123456");
+      return;
+    }
+
+    const baseUrl = env.DEMO_BASE_URL.replace(/\/$/, "");
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}/api/demo/demandes/${encodeURIComponent(code)}/recepisse`);
+    } catch (err) {
+      console.error("[telegram] /recepisse fetch échoué:", err);
+      await ctx.reply("Impossible de joindre le site DEMO pour récupérer ce récépissé.");
+      return;
+    }
+    if (!res.ok) {
+      await ctx.reply(`Aucune demande trouvée avec le code ${code} (démonstration).`);
+      return;
+    }
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    try {
+      await sendDocumentReliably(ctx, buffer, `recepisse-${code}.pdf`, `Récépissé (démo) — ${code}`);
+    } catch (err) {
+      console.error("[telegram] envoi du récépissé définitivement échoué:", err);
+      await ctx.reply(
+        "Le récépissé a été généré mais n'a pas pu vous être envoyé après plusieurs tentatives. Réessayez /recepisse dans un instant.",
+      );
+    }
   });
 
   // /lang — changer de langue
@@ -413,6 +532,16 @@ export function getBot(): Bot {
 
     await ctx.answerCallbackQuery();
 
+    // "Casier judiciaire" est le seul document dont la demande est
+    // automatisée bout-à-bout (voir lib/telegram/casierFlow.ts) : upload des
+    // 2 documents -> extraction -> questions -> soumission -> récépissé.
+    // Les autres options du menu restent des liens "bientôt disponible".
+    if (key === "casier" && ctx.chat) {
+      startCasierSession(ctx.chat.id, lang === "fr" ? "dyu" : lang);
+      await ctx.reply(CASIER_ASK_DOC1);
+      return;
+    }
+
     // 1. Générer et envoyer un audio expliquant la situation (sans l'URL),
     // AVANT le texte : ce message ne porte pas de boutons, mais on garde le
     // même ordre (audio -> texte) pour rester cohérent sur tout le bot.
@@ -482,6 +611,21 @@ export function getBot(): Bot {
   bot.on("message:photo", async (ctx) => {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
+
+    // Une photo reçue pendant un flux "casier judiciaire" en cours est un
+    // document d'identité à extraire, pas une demande d'explication générique.
+    if (hasActiveCasierSession(ctx.chat.id)) {
+      try {
+        const largest = ctx.message.photo.at(-1)!;
+        const buffer = await downloadTelegramFile(bot, largest.file_id);
+        const result = await handleCasierDocument(ctx.chat.id, buffer, "image/jpeg", "photo.jpg");
+        await replyToCasierStep(ctx, result);
+      } catch (err) {
+        await replyToCasierError(ctx, err);
+      }
+      return;
+    }
+
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
     const ack = await ctx.reply(tBilingual(ACK_READING, lang));
@@ -529,6 +673,25 @@ export function getBot(): Bot {
       await ctx.reply(tBilingual(ERR_WRONG_FILE, lang));
       return;
     }
+
+    // Document reçu pendant un flux "casier judiciaire" en cours : à extraire,
+    // pas à expliquer (voir même branche sur message:photo ci-dessus).
+    if (hasActiveCasierSession(ctx.chat.id)) {
+      try {
+        const buffer = await downloadTelegramFile(bot, ctx.message.document.file_id);
+        const result = await handleCasierDocument(
+          ctx.chat.id,
+          buffer,
+          mimeType,
+          ctx.message.document.file_name ?? "document",
+        );
+        await replyToCasierStep(ctx, result);
+      } catch (err) {
+        await replyToCasierError(ctx, err);
+      }
+      return;
+    }
+
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
     const ack = await ctx.reply(tBilingual(ACK_READING, lang));
@@ -575,6 +738,18 @@ export function getBot(): Bot {
   bot.on("message:text", async (ctx) => {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
+
+    // Réponse à une question du flux "casier judiciaire" (voir casierFlow.ts)
+    const casierSession = getCasierSession(ctx.chat.id);
+    if (casierSession?.step === "awaiting_field") {
+      try {
+        const result = await handleCasierTextAnswer(ctx.chat.id, ctx.message.text);
+        await replyToCasierStep(ctx, result);
+      } catch (err) {
+        await replyToCasierError(ctx, err);
+      }
+      return;
+    }
 
     // Commande textuelle "PAYER"
     if (ctx.message.text.trim().toUpperCase() === "PAYER") {

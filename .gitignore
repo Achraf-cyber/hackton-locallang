@@ -13,5 +13,9 @@ node_modules/
 .next/
 .env.local
 
+# Automation script artifacts (regenerated on each run, see automation/fill-form.js)
+automation/output/
+automation/fixtures/
+
 # Env
 .env

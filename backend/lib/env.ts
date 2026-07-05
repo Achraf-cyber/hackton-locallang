@@ -15,6 +15,11 @@ const envSchema = z.object({
   // /speak reste sur MODEL_SERVICE_URL (mode "un seul Space", ex. en local).
   TTS_SERVICE_URL: z.string().url("TTS_SERVICE_URL doit être une URL valide").optional(),
   TELEGRAM_TOKEN: z.string().optional(),
+  // URL de CE déploiement Next.js lui-même (pas un Space externe) : sert au
+  // bot Telegram pour aller chercher le PDF de récépissé généré par
+  // app/api/demo/demandes/[code]/recepisse (voir lib/telegram/bot.ts,
+  // commande /recepisse). Optionnel, retombe sur localhost en dev.
+  DEMO_BASE_URL: z.string().url("DEMO_BASE_URL doit être une URL valide").default("http://localhost:3000"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL manquant"),
   DAILY_FREE_LIMIT: z.coerce.number().int().positive().default(8),
 });

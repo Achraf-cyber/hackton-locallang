@@ -1,0 +1,14 @@
+{
+  "name": "ecasier-demo-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright script that fills the DEMO e-casier wizard (backend/app/demo/*) end-to-end. Never targets any real government host — see BASE_URL guard in fill-form.js.",
+  "type": "commonjs",
+  "scripts": {
+    "fill": "node fill-form.js",
+    "fill:yes": "node fill-form.js --yes"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
