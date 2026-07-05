@@ -6,6 +6,7 @@
  */
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { DOCUMENT_TYPE_LABELS } from "./types";
+import { NATIONALITE_OPTIONS, TYPE_PIECE_OPTIONS, labelFor } from "./data";
 import type { StoredDemande } from "./store";
 
 const PAGE_WIDTH = 595.28; // A4 portrait, points
@@ -49,8 +50,11 @@ export async function generateRecepissePdf(demande: StoredDemande): Promise<Uint
   drawLine(`Prénom(s) : ${demandeur.prenoms}`);
   drawLine(`Date de naissance : ${demandeur.dateNaissance}`);
   drawLine(`Lieu de naissance : ${demandeur.lieuNaissance}`);
-  drawLine(`Nationalité : ${demandeur.nationalite}`);
-  drawLine(`Type de pièce : ${demandeur.typePiece} — N° ${demandeur.numeroPiece}`, { gap: 24 });
+  drawLine(`Nationalité : ${labelFor(NATIONALITE_OPTIONS, demandeur.nationalite)}`);
+  drawLine(
+    `Type de pièce : ${labelFor(TYPE_PIECE_OPTIONS, demandeur.typePiece)} — N° ${demandeur.numeroPiece}`,
+    { gap: 24 },
+  );
 
   drawLine("Filiation", { size: 13, font: bold, gap: 20 });
   drawLine(`Père : ${filiation.nomPere} ${filiation.prenomsPere}`);

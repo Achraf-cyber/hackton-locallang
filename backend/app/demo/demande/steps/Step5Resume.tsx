@@ -3,6 +3,18 @@
 import { useState } from "react";
 import { useDemoForm } from "@/lib/demo/DemoContext";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/demo/types";
+import {
+  GENRE_OPTIONS,
+  NATIONALITE_OPTIONS,
+  PAYS_OPTIONS,
+  SITUATION_MATRIMONIALE_OPTIONS,
+  TYPE_PIECE_OPTIONS,
+  arrondissementOptions,
+  communeOptions,
+  labelFor,
+  provinceOptions,
+  regionOptions,
+} from "@/lib/demo/data";
 import styles from "../../demo.module.css";
 
 export function Step5Resume() {
@@ -31,20 +43,20 @@ export function Step5Resume() {
         <tbody>
           <tr><td>Nom</td><td>{demandeur.nom}</td></tr>
           <tr><td>Prénom(s)</td><td>{demandeur.prenoms}</td></tr>
-          <tr><td>Genre</td><td>{demandeur.genre}</td></tr>
+          <tr><td>Genre</td><td>{labelFor(GENRE_OPTIONS, demandeur.genre)}</td></tr>
           <tr><td>Date de naissance</td><td>{demandeur.dateNaissance}</td></tr>
           <tr><td>Lieu de naissance</td><td>{demandeur.lieuNaissance}</td></tr>
           <tr><td>Domicile</td><td>{demandeur.domicile}</td></tr>
-          <tr><td>Situation matrimoniale</td><td>{demandeur.situationMatrimoniale}</td></tr>
+          <tr><td>Situation matrimoniale</td><td>{labelFor(SITUATION_MATRIMONIALE_OPTIONS, demandeur.situationMatrimoniale)}</td></tr>
           <tr><td>Profession</td><td>{demandeur.profession}</td></tr>
           <tr><td>Téléphone</td><td>{demandeur.telephone}</td></tr>
-          <tr><td>Pays de naissance</td><td>{demandeur.paysNaissance}</td></tr>
-          <tr><td>Nationalité</td><td>{demandeur.nationalite}</td></tr>
-          <tr><td>Région de naissance</td><td>{demandeur.regionNaissance}</td></tr>
-          <tr><td>Province de naissance</td><td>{demandeur.provinceNaissance}</td></tr>
-          <tr><td>Commune de naissance</td><td>{demandeur.communeNaissance}</td></tr>
-          <tr><td>Arrondissement de naissance</td><td>{demandeur.arrondissementNaissance}</td></tr>
-          <tr><td>Type de pièce</td><td>{demandeur.typePiece}</td></tr>
+          <tr><td>Pays de naissance</td><td>{labelFor(PAYS_OPTIONS, demandeur.paysNaissance)}</td></tr>
+          <tr><td>Nationalité</td><td>{labelFor(NATIONALITE_OPTIONS, demandeur.nationalite)}</td></tr>
+          <tr><td>Région de naissance</td><td>{labelFor(regionOptions(), demandeur.regionNaissance)}</td></tr>
+          <tr><td>Province de naissance</td><td>{labelFor(provinceOptions(demandeur.regionNaissance), demandeur.provinceNaissance)}</td></tr>
+          <tr><td>Commune de naissance</td><td>{labelFor(communeOptions(demandeur.regionNaissance, demandeur.provinceNaissance), demandeur.communeNaissance)}</td></tr>
+          <tr><td>Arrondissement de naissance</td><td>{demandeur.arrondissementNaissance ? labelFor(arrondissementOptions(demandeur.regionNaissance, demandeur.provinceNaissance, demandeur.communeNaissance), demandeur.arrondissementNaissance) : ""}</td></tr>
+          <tr><td>Type de pièce</td><td>{labelFor(TYPE_PIECE_OPTIONS, demandeur.typePiece)}</td></tr>
           <tr><td>Numéro de la pièce</td><td>{demandeur.numeroPiece}</td></tr>
           <tr><td>Nom du père</td><td>{filiation.nomPere}</td></tr>
           <tr><td>Prénom(s) du père</td><td>{filiation.prenomsPere}</td></tr>

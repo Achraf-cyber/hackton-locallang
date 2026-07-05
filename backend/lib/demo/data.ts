@@ -141,3 +141,13 @@ export function arrondissementOptions(
   const commune = province?.communes.find((c) => c.value === communeValue);
   return commune ? commune.arrondissements : [];
 }
+
+/**
+ * Résout la `value` d'une option (ex. "celibataire") vers son libellé lisible
+ * (ex. "Célibataire") pour l'affichage (récap étape 5, PDF récépissé).
+ * Renvoie la valeur brute telle quelle si introuvable, plutôt que de
+ * masquer une valeur inattendue.
+ */
+export function labelFor(options: SelectOption[], value: string): string {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
