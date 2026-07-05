@@ -1,0 +1,14 @@
+{
+  "name": "automation-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Service Node dedie a l'automatisation Playwright du site DEMO e-casier (voir backend/lib/demoAutomation.ts pour le client qui l'appelle). Deploye comme Space Docker separe, comme model-service/asr-service/tts-service : un navigateur headless a besoin d'un process Node persistant et d'un binaire Chromium, ce qui ne fonctionne pas dans une fonction serverless Vercel standard.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "playwright": "^1.48.0"
+  }
+}

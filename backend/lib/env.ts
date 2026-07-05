@@ -20,6 +20,12 @@ const envSchema = z.object({
   // app/api/demo/demandes/[code]/recepisse (voir lib/telegram/bot.ts,
   // commande /recepisse). Optionnel, retombe sur localhost en dev.
   DEMO_BASE_URL: z.string().url("DEMO_BASE_URL doit être une URL valide").default("http://localhost:3000"),
+  // Space HF dedie a l'automatisation Playwright du site DEMO (voir
+  // automation-service/README.md et lib/demoAutomation.ts) : un navigateur
+  // headless ne peut pas tourner dans une fonction serverless Vercel
+  // standard. Optionnel : si absent, lib/demoAutomation.ts retombe sur un
+  // lancement Playwright EN-PROCESS (dev local uniquement, jamais en prod).
+  AUTOMATION_SERVICE_URL: z.string().url("AUTOMATION_SERVICE_URL doit être une URL valide").optional(),
   DATABASE_URL: z.string().min(1, "DATABASE_URL manquant"),
   DAILY_FREE_LIMIT: z.coerce.number().int().positive().default(8),
 });

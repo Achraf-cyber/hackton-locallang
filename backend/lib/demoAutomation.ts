@@ -1,26 +1,22 @@
 /**
  * Remplit et soumet le formulaire DEMO "e-casier" (backend/app/demo/demande)
- * via un navigateur headless (Playwright), pour le compte du bot Telegram
- * (voir lib/telegram/casierFlow.ts). Équivalent programmatique
- * d'`automation/fill-form.js`, mais appelé en-process depuis le backend
- * plutôt qu'en CLI, et avec les fichiers déjà en mémoire (buffers reçus de
- * Telegram) plutôt que lus depuis le disque.
+ * pour le compte du bot Telegram (voir lib/telegram/casierFlow.ts).
  *
- * GARDE-FOU : DEMO_BASE_URL doit pointer vers CE déploiement (le site DEMO
- * qu'on héberge nous-mêmes), jamais vers un site gouvernemental réel -- voir
- * assertNotRealGovSite().
+ * PRODUCTION : délègue à `automation-service` (Space Docker séparé, voir
+ * automation-service/README.md) via AUTOMATION_SERVICE_URL -- un navigateur
+ * headless a besoin d'un process Node persistant + d'un binaire Chromium,
+ * incompatible avec une fonction serverless Vercel standard. Même
+ * raisonnement que le split model-service/asr-service/tts-service, appliqué
+ * ici à une contrainte d'exécution plutôt que de RAM.
  *
- * ATTENTION DÉPLOIEMENT : Playwright a besoin d'un binaire Chromium et d'un
- * processus Node persistant. Ça fonctionne dans `next dev` et dans un
- * déploiement Node "classique" (VM, conteneur), mais PAS dans une fonction
- * serverless Vercel standard (filesystem en lecture seule, pas de Chromium
- * embarqué) -- il faudrait soit un service à part (comme model-service),
- * soit remplacer `playwright` par `playwright-core` + `@sparticuz/chromium`
- * pour un runtime serverless. Cette décision n'a pas encore été prise ; ce
- * module fonctionne tel quel pour le développement local / un hébergement
- * Node classique.
+ * DEV LOCAL : si AUTOMATION_SERVICE_URL est absent, retombe sur un
+ * lancement Playwright EN-PROCESS (submitCasierDemandeLocal), pratique pour
+ * développer sans faire tourner le service séparé -- nécessite `playwright`
+ * en dépendance locale (voir package.json) et n'est pas destiné à la prod.
+ *
+ * GARDE-FOU (les deux chemins) : refuse d'automatiser un site autre que
+ * notre propre DEMO -- voir assertNotRealGovSite().
  */
-import { chromium } from "playwright";
 import { getEnv } from "./env";
 import type { DemoFormState } from "./demo/types";
 
@@ -48,18 +44,76 @@ export interface CasierAutomationResult {
 }
 
 /**
+ * Point d'entrée public : appelle automation-service si configuré (prod),
+ * sinon lance Playwright en-process (dev local uniquement).
+ */
+export async function submitCasierDemande(
+  formState: DemoFormState,
+  documents: { acteNaissance: CasierDocument; pieceIdentite: CasierDocument },
+): Promise<CasierAutomationResult> {
+  const env = getEnv();
+
+  if (env.AUTOMATION_SERVICE_URL) {
+    return submitViaAutomationService(env.AUTOMATION_SERVICE_URL, env.DEMO_BASE_URL, formState, documents);
+  }
+
+  return submitCasierDemandeLocal(formState, documents);
+}
+
+async function submitViaAutomationService(
+  serviceUrl: string,
+  demoBaseUrl: string,
+  formState: DemoFormState,
+  documents: { acteNaissance: CasierDocument; pieceIdentite: CasierDocument },
+): Promise<CasierAutomationResult> {
+  const res = await fetch(`${serviceUrl.replace(/\/$/, "")}/submit-casier`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      formState,
+      demoBaseUrl,
+      documents: {
+        acteNaissance: {
+          base64: documents.acteNaissance.buffer.toString("base64"),
+          mimeType: documents.acteNaissance.mimeType,
+          fileName: documents.acteNaissance.fileName,
+        },
+        pieceIdentite: {
+          base64: documents.pieceIdentite.buffer.toString("base64"),
+          mimeType: documents.pieceIdentite.mimeType,
+          fileName: documents.pieceIdentite.fileName,
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`automation-service ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+
+  const data = (await res.json()) as { referenceCode: string; pdfBase64: string };
+  return { referenceCode: data.referenceCode, pdfBuffer: Buffer.from(data.pdfBase64, "base64") };
+}
+
+/**
  * Remplit les 5 étapes du wizard DEMO avec `formState`, téléverse les deux
  * documents fournis, paie (fictif), valide, puis télécharge le récépissé
  * PDF généré. Lance et ferme son propre navigateur à chaque appel (pas de
  * pool de contextes : le volume attendu ne le justifie pas pour une démo).
+ * DEV LOCAL UNIQUEMENT -- voir le commentaire d'en-tête du fichier.
  */
-export async function submitCasierDemande(
+async function submitCasierDemandeLocal(
   formState: DemoFormState,
   documents: { acteNaissance: CasierDocument; pieceIdentite: CasierDocument },
 ): Promise<CasierAutomationResult> {
   const baseUrl = getEnv().DEMO_BASE_URL.replace(/\/$/, "");
   assertNotRealGovSite(baseUrl);
 
+  // Import dynamique : `playwright` ne doit pas être embarqué dans le bundle
+  // serverless de prod (gros, natif) quand AUTOMATION_SERVICE_URL est défini
+  // et que ce chemin de code n'est jamais atteint.
+  const { chromium } = await import("playwright");
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
