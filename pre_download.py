@@ -53,9 +53,9 @@ def retry_with_backoff(step_name: str, fn, *args, **kwargs):
 
 print("Téléchargement NLLB (traduction)...")
 retry_with_backoff("NLLB tokenizer", AutoTokenizer.from_pretrained,
-                    "facebook/nllb-200-distilled-600M", token=HF_TOKEN)
+                    "facebook/nllb-200-3.3B", token=HF_TOKEN)
 retry_with_backoff("NLLB modèle", AutoModelForSeq2SeqLM.from_pretrained,
-                    "facebook/nllb-200-distilled-600M", token=HF_TOKEN)
+                    "facebook/nllb-200-3.3B", token=HF_TOKEN)
 
 print("Téléchargement TTS Dioula...")
 retry_with_backoff("TTS dyu modèle", VitsModel.from_pretrained,
@@ -80,18 +80,6 @@ for lang in ["dyu", "mos", "fra"]:
     retry_with_backoff(f"adaptateur {lang}", asr.load_adapter, lang, token=HF_TOKEN)
 
 # NOUVEAUX MODÈLES DE LA MIGRATION
-print("Téléchargement afrimt5_fr_bam_news (traduction Dioula/Bambara)...")
-retry_with_backoff("afrimt5_fr_bam_news tokenizer", AutoTokenizer.from_pretrained,
-                    "masakhane/afrimt5_fr_bam_news", token=HF_TOKEN)
-retry_with_backoff("afrimt5_fr_bam_news modèle", AutoModelForSeq2SeqLM.from_pretrained,
-                    "masakhane/afrimt5_fr_bam_news", token=HF_TOKEN)
-
-print("Téléchargement afrimt5_fr_mos_news (traduction Mooré)...")
-retry_with_backoff("afrimt5_fr_mos_news tokenizer", AutoTokenizer.from_pretrained,
-                    "masakhane/afrimt5_fr_mos_news", token=HF_TOKEN)
-retry_with_backoff("afrimt5_fr_mos_news modèle", AutoModelForSeq2SeqLM.from_pretrained,
-                    "masakhane/afrimt5_fr_mos_news", token=HF_TOKEN)
-
 print("Téléchargement OmniVoice (TTS)...")
 from huggingface_hub import snapshot_download
 retry_with_backoff("OmniVoice snapshot", snapshot_download,

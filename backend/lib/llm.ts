@@ -56,9 +56,10 @@ function model(): LanguageModel {
 }
 
 // IMPORTANT : le texte genere ici est ensuite traduit en Dioula/Moore par
-// NLLB-200-distilled-600M (voir model-service), un modele tres peu
-// performant sur ces deux langues (tres peu de donnees d'entrainement,
-// majoritairement issues de corpus religieux). Verifie empiriquement : des
+// NLLB-200-3.3B (voir model-service), qui reste peu performant sur ces deux
+// langues (tres peu de donnees d'entrainement, majoritairement issues de
+// corpus religieux, meme dans la plus grosse variante de NLLB). Verifie
+// empiriquement (sur la variante distilled-600M, avant migration) : des
 // formules de politesse/adieu ("Au revoir.", "Prenez soin de vous.") sont
 // systematiquement mal traduites en Moore en invoquant "Zeova"/"Zeeze"
 // (Jehovah/Jesus, artefact du corpus d'entrainement). On evite donc de

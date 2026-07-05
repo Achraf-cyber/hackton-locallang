@@ -99,14 +99,11 @@ def _dashboard_rows() -> list[tuple[str, str, str]]:
     translator_loaded = "chargé" if Translator._instance is not None else "pas encore chargé (lazy)"
     tts_loaded = "chargé" if TTS._instance is not None else "pas encore chargé (lazy)"
 
-    translation_model = (
-        "masakhane/afrimt5_fr_{bam,mos}_news" if settings.TRANSLATION_BACKEND == "afrimt5" else NLLB_MODEL_NAME
-    )
     tts_dyu_model = "k2-fsa/OmniVoice" if settings.TTS_BACKEND_DYU == "omnivoice" else MMS_TTS_MODEL_NAMES["dyu"]
 
     return [
         ("ASR (dyu/mos/fra)", _ASR_MODEL_NAMES.get(settings.ASR_BACKEND, settings.ASR_BACKEND), asr_loaded),
-        ("Traduction", translation_model, translator_loaded),
+        ("Traduction", NLLB_MODEL_NAME, translator_loaded),
         ("TTS — dyu", tts_dyu_model, tts_loaded),
         ("TTS — mos", MMS_TTS_MODEL_NAMES["mos"], tts_loaded),
     ]
@@ -141,7 +138,7 @@ def dashboard() -> str:
     {rows_html}
   </table>
   <p style="color:#64748b; margin-top:1.5rem;">
-    Config via variables d'env (ASR_BACKEND / TRANSLATION_BACKEND / TTS_BACKEND_DYU).
+    Config via variables d'env (ASR_BACKEND / TTS_BACKEND_DYU).
     Chaque modèle est chargé au premier appel (singleton paresseux), donc "pas encore chargé"
     juste après un redémarrage est normal.
   </p>
