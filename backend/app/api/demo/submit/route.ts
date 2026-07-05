@@ -6,12 +6,27 @@
  */
 import { NextRequest } from "next/server";
 import { addDemande, generateReferenceCode } from "@/lib/demo/store";
-import type { DemoFormState } from "@/lib/demo/types";
+import { demoFormStateSchema } from "@/lib/demo/types";
 
 export async function POST(request: NextRequest) {
   await new Promise((resolve) => setTimeout(resolve, 400));
 
-  const payload = (await request.json()) as DemoFormState;
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return Response.json({ error: "Corps JSON invalide." }, { status: 400 });
+  }
+
+  const parsed = demoFormStateSchema.safeParse(json);
+  if (!parsed.success) {
+    return Response.json(
+      { error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") },
+      { status: 400 },
+    );
+  }
+
+  const payload = parsed.data;
   const referenceCode = generateReferenceCode();
 
   addDemande({ referenceCode, submittedAt: new Date().toISOString(), payload });

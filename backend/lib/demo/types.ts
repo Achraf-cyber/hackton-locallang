@@ -3,6 +3,7 @@
  * vrai site gouvernemental : formulaire fictif, backend fictif (app/api/demo/*),
  * jamais de requete vers un domaine reel.
  */
+import { z } from "zod";
 
 export interface DemandeurState {
   nom: string;
@@ -99,3 +100,51 @@ export const STEP_LABELS = [
 export type StepIndex = 0 | 1 | 2 | 3 | 4;
 
 export const DEMANDE_FEE_FCFA = 1000;
+
+/**
+ * Schéma de validation pour POST /api/demo/submit. Sans lui, un corps
+ * malformé (champ manquant, mauvais type) était stocké tel quel dans
+ * lib/demo/store.ts, faisant planter la génération du PDF récépissé plus
+ * tard (accès à une propriété absente) au lieu d'échouer clairement ici,
+ * tout de suite, avec un message utile.
+ */
+export const demandeurStateSchema = z.object({
+  nom: z.string().min(1),
+  prenoms: z.string().min(1),
+  genre: z.string().min(1),
+  dateNaissance: z.string().min(1),
+  lieuNaissance: z.string().min(1),
+  domicile: z.string().min(1),
+  situationMatrimoniale: z.string().min(1),
+  profession: z.string().min(1),
+  telephone: z.string().min(1),
+  paysNaissance: z.string().min(1),
+  nationalite: z.string().min(1),
+  regionNaissance: z.string().min(1),
+  provinceNaissance: z.string().min(1),
+  communeNaissance: z.string().min(1),
+  arrondissementNaissance: z.string(),
+  typePiece: z.string().min(1),
+  numeroPiece: z.string().min(1),
+});
+
+export const filiationStateSchema = z.object({
+  nomPere: z.string().min(1),
+  prenomsPere: z.string().min(1),
+  nomMere: z.string().min(1),
+  prenomsMere: z.string().min(1),
+});
+
+export const demoFormStateSchema = z.object({
+  demandeur: demandeurStateSchema,
+  filiation: filiationStateSchema,
+  documents: z.array(
+    z.object({
+      type: z.enum(["acte_naissance", "piece_identite"]),
+      fileName: z.string().min(1),
+      sizeBytes: z.number().nonnegative(),
+    }),
+  ),
+  paid: z.boolean(),
+  paymentReference: z.string().nullable(),
+});
