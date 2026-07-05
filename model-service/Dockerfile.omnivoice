@@ -8,17 +8,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# k2-fsa/OmniVoice (Qwen3-0.6B backbone + audio_tokenizer) : pas de dependance
-# fairseq2/omnilingual-asr (contrairement a l'ASR), safe a installer avec le
-# reste des deps. Space dedie : le combiner avec NLLB-200-3.3B dans le meme
-# Space (voir model-service/Dockerfile) faisait depasser les 16 Go de RAM et
-# crashait (OOM) -- ce Space ne sert QUE /speak, jamais /translate ou
-# /localize, donc Translator (NLLB) ne se charge jamais (singleton paresseux).
-RUN pip install --no-cache-dir retrying xxhash omnivoice
-
 COPY . .
 
-ENV TTS_BACKEND_DYU=omnivoice
+# k2-fsa/OmniVoice a ete teste en prod pour le dioula et desactive : il
+# n'articulait pas correctement certaines parties des mots (retours
+# utilisateur). On revient donc a facebook/mms-tts-dyu (TTS_BACKEND_DYU=mms,
+# le defaut de Settings -- voir app/deps.py), deja fiable pour le mooré. Ce
+# Space reste separe du Space traduction pour la meme raison qu'avant (eviter
+# de charger NLLB-200-3.3B et un modele TTS dans le meme process/16 Go).
 
 EXPOSE 7860
 

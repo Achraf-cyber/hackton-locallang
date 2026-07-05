@@ -298,13 +298,20 @@ async function checkQuotaOrReply(
 
 const AUDIO_CAPTION_MAX_LENGTH = 1024;
 
+/** Formate une durée en millisecondes pour affichage à l'usager (ex. "3,2 s"). */
+function formatDurationSeconds(durationMs: number): string {
+  return `${(durationMs / 1000).toFixed(1).replace(".", ",")} s`;
+}
+
 /** Envoie le résultat (audio + texte en caption, traduction fr entre parenthèses). */
 async function replyWithResult(
   ctx: Context,
   ackMessageId: number,
-  result: { translated: string; audioUrl: string; sourceFr: string }
+  result: { translated: string; audioUrl: string; sourceFr: string },
+  durationMs: number,
 ): Promise<void> {
-  const caption = `${result.translated} (${result.sourceFr})`;
+  const timingLine = `⏱️ Répondu en ${formatDurationSeconds(durationMs)}`;
+  const caption = `${result.translated} (${result.sourceFr})\n${timingLine}`;
   try {
     const audioBuffer = await downloadAudio(result.audioUrl);
     if (caption.length <= AUDIO_CAPTION_MAX_LENGTH) {
@@ -315,7 +322,7 @@ async function replyWithResult(
       await ctx.replyWithAudio(new InputFile(audioBuffer, "reponse.wav"), {
         caption: result.translated,
       });
-      await ctx.reply(`(${result.sourceFr})`);
+      await ctx.reply(`(${result.sourceFr})\n${timingLine}`);
     }
   } catch {
     // Si l'audio échoue, on renvoie le texte brut.
@@ -603,7 +610,7 @@ export function getBot(): Bot {
           console.error("DB Log telegram voice interaction failed:", dbErr)
         );
 
-      await replyWithResult(ctx, ack.message_id, out.result);
+      await replyWithResult(ctx, ack.message_id, out.result, durationMs);
     } catch (err) {
       await replyWithError(ctx, ack.message_id, err, lang);
     }
@@ -661,7 +668,7 @@ export function getBot(): Bot {
           console.error("DB Log telegram photo interaction failed:", dbErr)
         );
 
-      await replyWithResult(ctx, ack.message_id, out.result);
+      await replyWithResult(ctx, ack.message_id, out.result, durationMs);
     } catch (err) {
       await replyWithError(ctx, ack.message_id, err, lang);
     }
@@ -736,7 +743,7 @@ export function getBot(): Bot {
           )
         );
 
-      await replyWithResult(ctx, ack.message_id, out.result);
+      await replyWithResult(ctx, ack.message_id, out.result, durationMs);
     } catch (err) {
       await replyWithError(ctx, ack.message_id, err, lang);
     }
@@ -825,7 +832,7 @@ export function getBot(): Bot {
           )
         );
 
-      await replyWithResult(ctx, ack.message_id, out.result);
+      await replyWithResult(ctx, ack.message_id, out.result, durationMs);
     } catch (err) {
       await replyWithError(ctx, ack.message_id, err, lang);
     }
