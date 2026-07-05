@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDemoForm } from "@/lib/demo/DemoContext";
-import type { SelectOption } from "@/lib/demo/data";
+import { arrondissementOptions, communeOptions, provinceOptions, type SelectOption } from "@/lib/demo/data";
 import styles from "../../demo.module.css";
 
 interface Parameters {
@@ -19,9 +19,6 @@ export function Step1Demandeur() {
 
   const [parameters, setParameters] = useState<Parameters | null>(null);
   const [regions, setRegions] = useState<SelectOption[]>([]);
-  const [provinces, setProvinces] = useState<SelectOption[]>([]);
-  const [communes, setCommunes] = useState<SelectOption[]>([]);
-  const [arrondissements, setArrondissements] = useState<SelectOption[]>([]);
 
   // Batch fetch des donnees de reference (sexe, situation matrimoniale, ...),
   // simule l'appel "parametre_values/parameters" du site reel.
@@ -34,63 +31,27 @@ export function Step1Demandeur() {
       .then((data) => setRegions(data.regions ?? []));
   }, []);
 
-  // Cascade region -> province. Garde "ignore" : si l'usager change de
-  // région avant que la réponse précédente n'arrive (ex. double-clic rapide
-  // région A -> B -> A), une réponse plus lente pour un choix déjà remplacé
-  // pourrait sinon écraser la liste correcte avec des options périmées.
-  useEffect(() => {
-    if (!demandeur.regionNaissance) {
-      setProvinces([]);
-      return;
-    }
-    let ignore = false;
-    fetch(`/api/demo/localites?region=${demandeur.regionNaissance}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!ignore) setProvinces(data.provinces ?? []);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [demandeur.regionNaissance]);
-
-  // Cascade province -> commune (même garde).
-  useEffect(() => {
-    if (!demandeur.regionNaissance || !demandeur.provinceNaissance) {
-      setCommunes([]);
-      return;
-    }
-    let ignore = false;
-    fetch(
-      `/api/demo/localites?region=${demandeur.regionNaissance}&province=${demandeur.provinceNaissance}`,
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        if (!ignore) setCommunes(data.communes ?? []);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [demandeur.regionNaissance, demandeur.provinceNaissance]);
-
-  // Cascade commune -> arrondissement, optionnel (même garde).
-  useEffect(() => {
-    if (!demandeur.regionNaissance || !demandeur.provinceNaissance || !demandeur.communeNaissance) {
-      setArrondissements([]);
-      return;
-    }
-    let ignore = false;
-    fetch(
-      `/api/demo/localites?region=${demandeur.regionNaissance}&province=${demandeur.provinceNaissance}&commune=${demandeur.communeNaissance}`,
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        if (!ignore) setArrondissements(data.arrondissements ?? []);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [demandeur.regionNaissance, demandeur.provinceNaissance, demandeur.communeNaissance]);
+  // Cascade région -> province -> commune -> arrondissement : dérivée en
+  // mémoire (useMemo), PAS via fetch + useEffect + useState comme le reste
+  // du formulaire. provinceOptions/communeOptions/arrondissementOptions sont
+  // déjà des fonctions synchrones (lib/demo/data.ts, le même module que
+  // consomme app/api/demo/localites/route.ts) : passer par le réseau pour
+  // filtrer un tableau statique déjà présent dans le bundle n'apportait
+  // qu'une latence et une fenêtre de course (une réponse en retard pour une
+  // sélection déjà remplacée pouvait écraser la liste avec des options
+  // périmées) sans aucun bénéfice.
+  const provinces = useMemo(
+    () => provinceOptions(demandeur.regionNaissance),
+    [demandeur.regionNaissance],
+  );
+  const communes = useMemo(
+    () => communeOptions(demandeur.regionNaissance, demandeur.provinceNaissance),
+    [demandeur.regionNaissance, demandeur.provinceNaissance],
+  );
+  const arrondissements = useMemo(
+    () => arrondissementOptions(demandeur.regionNaissance, demandeur.provinceNaissance, demandeur.communeNaissance),
+    [demandeur.regionNaissance, demandeur.provinceNaissance, demandeur.communeNaissance],
+  );
 
   const handleRegionChange = (value: string) => {
     updateDemandeur({
