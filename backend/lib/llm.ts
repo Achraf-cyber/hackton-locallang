@@ -71,6 +71,22 @@ const NO_SIGNOFF_RULE =
   "\"a bientot\", \"n'hesitez pas a revenir\", etc.). Arrete-toi juste apres " +
   "l'information utile.";
 
+// Le texte produit ici est ensuite traduit automatiquement en Dioula/Mooré
+// par NLLB-200 (voir NLLB_MODEL_NAME dans model-service), un modele qui perd
+// beaucoup en fidelite sur des phrases longues, ambigues ou idiomatiques.
+// Ces regles rendent le francais "facile a traduire machine" : sujet/verbe/
+// complement explicites dans chaque phrase, une seule idee par phrase, zero
+// figure de style.
+const MT_FRIENDLY_RULE =
+  "Pour faciliter la traduction automatique qui suit, ecris des phrases " +
+  "courtes et grammaticalement completes : sujet + verbe + complement " +
+  "explicites (jamais de sujet sous-entendu ou de pronom sans antecedent " +
+  "clair dans la meme phrase). Une seule idee par phrase, phrases juxtaposees " +
+  "plutot que subordonnees. N'utilise aucune expression idiomatique, " +
+  "metaphore ou tournure figuree (pas de \"il ne faut pas tarder\", " +
+  "\"du jour au lendemain\", etc.) : dis les choses de maniere litterale. " +
+  "N'utilise aucune abreviation ni sigle sans l'ecrire en toutes lettres.";
+
 const SIMPLIFY_SYSTEM = `Tu es un médiateur administratif ouest-africain. Tu réécris un texte
 administratif en français très simple, destiné à une personne peu lettrée.
 Règles strictes :
@@ -81,6 +97,7 @@ Règles strictes :
   2) Les démarches, numérotées (1., 2., 3., ...).
   3) À apporter (liste courte).
 - ${NO_SIGNOFF_RULE}
+- ${MT_FRIENDLY_RULE}
 Réponds uniquement avec le texte simplifié, sans préambule.`;
 
 const ANSWER_SYSTEM = `Tu es un agent d'accueil chaleureux des services publics en Afrique de
@@ -94,7 +111,8 @@ zéro jargon).
 - Question totalement hors sujet (ex : aide en programmation, culture
   générale sans lien avec les services publics) : recentre poliment vers les
   services publics.
-- ${NO_SIGNOFF_RULE}`;
+- ${NO_SIGNOFF_RULE}
+- ${MT_FRIENDLY_RULE}`;
 
 const READ_IMAGE_SYSTEM = `Tu es un médiateur administratif. On te montre un document (photo ou PDF).
 Réponds en français très simple (phrases courtes, zéro jargon), dans cet ordre :
@@ -106,6 +124,7 @@ Réponds en français très simple (phrases courtes, zéro jargon), dans cet ord
    doit faire.
 Reste concis : la reponse totale doit rester courte, elle sera lue a voix haute.
 ${NO_SIGNOFF_RULE}
+${MT_FRIENDLY_RULE}
 Si le document est illisible ou n'est pas exploitable, dis-le honnêtement au
 lieu d'inventer une information.`;
 

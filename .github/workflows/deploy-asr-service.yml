@@ -1,0 +1,49 @@
+name: Deploy ASR Space to Hugging Face Spaces
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "model-service/**"
+      - ".github/workflows/deploy-asr-service.yml"
+  workflow_dispatch: {}
+
+env:
+  # Space Docker separe, dedie a l'ASR (voir model-service/Dockerfile.asr) --
+  # a creer une fois sur huggingface.co/new-space (sdk: Docker) avant le
+  # premier run de ce workflow.
+  HF_SPACE: AchrafCyber/asr-service
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+
+      - name: Clone the Hugging Face Space
+        run: |
+          git clone "https://AchrafCyber:${HF_SPACE_TOKEN}@huggingface.co/spaces/${HF_SPACE}" space
+        env:
+          HF_SPACE_TOKEN: ${{ secrets.HF_SPACE_TOKEN }}
+
+      - name: Sync model-service/ into the Space (excluding its own .git)
+        run: |
+          rsync -a --delete --exclude ".git" model-service/ space/
+
+      - name: Use the ASR-only Dockerfile as the Space's Dockerfile
+        run: |
+          mv space/Dockerfile.asr space/Dockerfile
+
+      - name: Commit and push if there are changes
+        working-directory: space
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Aucun changement a deployer."
+            exit 0
+          fi
+          git commit -m "Deploy from ${{ github.repository }}@${{ github.sha }}"
+          git push

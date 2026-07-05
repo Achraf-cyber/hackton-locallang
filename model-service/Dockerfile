@@ -8,12 +8,19 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# TTS_BACKEND_DYU=omnivoice : test de k2-fsa/OmniVoice pour le dioula (Qwen3
+# backbone + audio_tokenizer separe, pas de dependance fairseq2/omnilingual-asr
+# contrairement a l'ASR -- safe a installer meme dans ce Space translation-only.
+RUN pip install --no-cache-dir retrying xxhash omnivoice
+
 COPY . .
 
-# Space dedie a la traduction (facebook/nllb-200-3.3B, ~13 Go) : l'ASR/TTS
-# lourds (omnilingual-asr, omnivoice) sont geres dans un Space separe, voir
-# le prompt de migration. ASR_BACKEND/TTS_BACKEND_DYU restent sur leurs
-# defauts legers (Settings.local / mms).
+ENV TTS_BACKEND_DYU=omnivoice
+
+# Space dedie a la traduction (facebook/nllb-200-3.3B, ~13 Go) + test TTS
+# OmniVoice dyu. L'ASR lourd (omnilingual-asr/fairseq2) est gere dans un
+# Space separe, voir le prompt de migration. ASR_BACKEND reste sur son
+# defaut leger (Settings.local).
 
 EXPOSE 7860
 

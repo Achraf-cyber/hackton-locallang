@@ -29,6 +29,14 @@ function baseUrl(): string {
   return getEnv().MODEL_SERVICE_URL.replace(/\/$/, "");
 }
 
+/** URL du Space ASR (voir model-service/Dockerfile.asr), separe du Space
+ * traduction/TTS. Retombe sur MODEL_SERVICE_URL si ASR_SERVICE_URL n'est pas
+ * defini (mode "un seul Space"). */
+function asrBaseUrl(): string {
+  const env = getEnv();
+  return (env.ASR_SERVICE_URL ?? env.MODEL_SERVICE_URL).replace(/\/$/, "");
+}
+
 /** Rend l'audio_url renvoyé par le service (chemin relatif) absolu. */
 export function toAbsoluteAudioUrl(audioUrl: string): string {
   if (/^https?:\/\//.test(audioUrl)) return audioUrl;
@@ -61,7 +69,7 @@ export async function transcribe(
 
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}/transcribe`, { method: "POST", body: form });
+    res = await fetch(`${asrBaseUrl()}/transcribe`, { method: "POST", body: form });
   } catch (err) {
     throw new ModelServiceError(
       `Impossible de joindre le service modèles (/transcribe): ${(err as Error).message}`,

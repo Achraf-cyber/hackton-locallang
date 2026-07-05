@@ -40,6 +40,19 @@ _ACCENT_TRANSLATION = str.maketrans(
 _CONSONANT_FALLBACK = {"c": "k", "h": "", "j": "z", "q": "k", "x": "ks"}
 _CH_DIGRAPH_RE = re.compile(r"ch", re.IGNORECASE)
 
+# Convention administrative francophone : NOM en majuscules, Prenom en casse
+# normale (ex. "SIMBRE Achraf"). VITS (mms-tts) traite un mot tout en
+# majuscules comme une unite a part (sigle/acronyme) et marque une coupure
+# audible avant le mot suivant -- un nom de famille se retrouve alors detache
+# du prenom au lieu d'etre prononce comme un seul groupe. Les vrais sigles
+# sont deja proscrits en amont (MT_FRIENDLY_RULE, backend/lib/llm.ts) donc on
+# neutralise sans risque la casse de tout mot entierement en majuscules.
+_ALLCAPS_WORD_RE = re.compile(r"\b[A-ZÀ-Ö]{2,}\b")
+
+
+def _normalize_allcaps_names(text: str) -> str:
+    return _ALLCAPS_WORD_RE.sub(lambda m: m.group(0).capitalize(), text)
+
 
 class TTS:
     _instance = None
@@ -189,6 +202,7 @@ class TTS:
 
     def speak(self, text: str, lang: str, output_path: str) -> str:
         settings = get_settings()
+        text = _normalize_allcaps_names(text)
         if lang == "dyu" and settings.TTS_BACKEND_DYU == "omnivoice":
             try:
                 model = self._get_omnivoice_model()
