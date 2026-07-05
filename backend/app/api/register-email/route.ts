@@ -32,10 +32,15 @@ export async function POST(request: NextRequest) {
   const user = await resolveUser("web", parsed.data.email);
   const token = signSession(user.id);
 
+  // Secure uniquement en prod : un navigateur ignore silencieusement les
+  // cookies Secure sur http://localhost, ce qui casserait la connexion en
+  // dev local si on le mettait inconditionnellement.
+  const secureFlag = process.env.NODE_ENV === "production" ? "; Secure" : "";
+
   const response = Response.json({ userId: user.id });
   response.headers.append(
     "Set-Cookie",
-    `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/`,
+    `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/${secureFlag}`,
   );
   return response;
 }
