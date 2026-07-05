@@ -2,7 +2,7 @@
  * Store en memoire process du backend MOCK "e-casier" DEMO. Reinitialise a
  * chaque redemarrage du serveur -- suffisant pour une demo, ne PAS utiliser
  * tel quel pour de vraies donnees. Partage entre /api/demo/submit (ecriture)
- * et /api/demo/demandes/[code] (lecture, "Suivre ma demande").
+ * et /api/demo/demandes/[code] et [code]/recepisse (lecture).
  */
 import type { DemoFormState } from "./types";
 
@@ -12,7 +12,20 @@ export interface StoredDemande {
   payload: DemoFormState;
 }
 
-const demandes: StoredDemande[] = [];
+// Épinglé sur globalThis comme lib/db.ts le fait pour PrismaClient : sans ça,
+// le serveur de dev (Turbopack/Fast Refresh) peut ré-exécuter ce module
+// séparément pour différentes routes API qui l'importent, créant PLUSIEURS
+// tableaux `demandes` indépendants au lieu d'un seul partagé -- une demande
+// soumise via /api/demo/submit devenait alors introuvable depuis
+// /api/demo/demandes/[code]/recepisse (404), bien que /api/demo/demandes/[code]
+// (lookup) la retrouve, preuve que ces deux routes voyaient déjà des
+// instances différentes du module.
+const globalForDemoStore = globalThis as unknown as { __demoStoreDemandes?: StoredDemande[] };
+
+const demandes: StoredDemande[] = globalForDemoStore.__demoStoreDemandes ?? [];
+if (process.env.NODE_ENV !== "production") {
+  globalForDemoStore.__demoStoreDemandes = demandes;
+}
 
 // Filet de sécurité pour un process long-uptime : sans plafond, ce tableau
 // grossirait indéfiniment (jamais purgé ailleurs). Une démo ne justifie pas

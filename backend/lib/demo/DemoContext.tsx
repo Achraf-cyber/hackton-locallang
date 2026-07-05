@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import {
   DemandeurState,
   DemoFormState,
@@ -73,22 +73,25 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const markPaid = (paymentReference: string) =>
     setFormState((prev) => ({ ...prev, paid: true, paymentReference }));
 
-  const isStepValid = (checkStep: StepIndex): boolean => {
-    if (checkStep === 0) {
-      return REQUIRED_DEMANDEUR_FIELDS.every((field) => formState.demandeur[field].trim() !== "");
-    }
-    if (checkStep === 1) {
-      return REQUIRED_FILIATION_FIELDS.every((field) => formState.filiation[field].trim() !== "");
-    }
-    if (checkStep === 2) {
-      const uploadedTypes = new Set(formState.documents.map((d) => d.type));
-      return REQUIRED_DOCUMENT_TYPES.every((type) => uploadedTypes.has(type));
-    }
-    if (checkStep === 3) {
-      return formState.paid;
-    }
-    return true;
-  };
+  const isStepValid = useCallback(
+    (checkStep: StepIndex): boolean => {
+      if (checkStep === 0) {
+        return REQUIRED_DEMANDEUR_FIELDS.every((field) => formState.demandeur[field].trim() !== "");
+      }
+      if (checkStep === 1) {
+        return REQUIRED_FILIATION_FIELDS.every((field) => formState.filiation[field].trim() !== "");
+      }
+      if (checkStep === 2) {
+        const uploadedTypes = new Set(formState.documents.map((d) => d.type));
+        return REQUIRED_DOCUMENT_TYPES.every((type) => uploadedTypes.has(type));
+      }
+      if (checkStep === 3) {
+        return formState.paid;
+      }
+      return true;
+    },
+    [formState],
+  );
 
   const goToStep = (target: StepIndex) => setStep(target);
   const next = () => setStep((s) => (s < LAST_STEP ? ((s + 1) as StepIndex) : s));
@@ -109,7 +112,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       referenceCode,
       setReferenceCode,
     }),
-    [formState, step, referenceCode],
+    [formState, step, referenceCode, isStepValid],
   );
 
   return <DemoContext.Provider value={value}>{children}</DemoContext.Provider>;
