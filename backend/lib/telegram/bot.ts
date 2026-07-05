@@ -219,7 +219,16 @@ async function sendMenuAudio(
     // encore pré-générée).
     const pregenerated = await fetchPregeneratedAudio(key, lang);
     const buffer = pregenerated ?? (await downloadAudio(await getCachedSpeechUrl(key, text, lang)));
-    await ctx.replyWithVoice(new InputFile(buffer, filename));
+    // replyWithVoice (PAS utilisé ici) exige un fichier .ogg encodé en OPUS
+    // côté Bot API Telegram -- nos fichiers sont du WAV (sortie brute des
+    // modèles TTS, voir model-service/app/services/tts.py). Envoyé via
+    // sendVoice, Telegram le reçoit mais ne peut pas le lire comme message
+    // vocal (bulle illisible, parfois proposé en téléchargement externe qui
+    // échoue aussi puisque l'extension/le conteneur ne correspondent pas à
+    // ce que le lecteur attend). replyWithAudio n'impose pas ce codec et
+    // affiche un lecteur audio classique -- c'est déjà ce qu'utilise
+    // replyWithResult() pour les réponses IA, on aligne ici sur le même choix.
+    await ctx.replyWithAudio(new InputFile(buffer, filename));
   } catch (err) {
     console.error(`[telegram] audio menu "${key}" échouée:`, err);
     // Silencieux — le texte affiché reste disponible pour les usagers
@@ -245,10 +254,12 @@ async function sendLanguagePicker(ctx: Context): Promise<void> {
         (buf) => buf ?? getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_DYU, "dyu").then(downloadAudio),
       ),
     ]);
-    await ctx.replyWithVoice(new InputFile(mosBuf, "welcome_mos.wav"), {
+    // replyWithAudio, pas replyWithVoice (voir le commentaire dans sendMenuAudio) :
+    // nos fichiers sont du WAV, pas de l'OGG/OPUS.
+    await ctx.replyWithAudio(new InputFile(mosBuf, "welcome_mos.wav"), {
       caption: "🗣️ Mooré ⬅️",
     });
-    await ctx.replyWithVoice(new InputFile(dyuBuf, "welcome_dyu.wav"), {
+    await ctx.replyWithAudio(new InputFile(dyuBuf, "welcome_dyu.wav"), {
       caption: "🗣️ Dioula ➡️",
     });
   } catch (err) {
