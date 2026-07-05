@@ -78,17 +78,17 @@ async function main() {
   let ok = 0;
   let failed = 0;
   for (const entry of entries) {
-    const outPath = join(outDir, `${entry.key}-${entry.lang}.wav`);
+    const outPath = join(outDir, `${entry.key}-${entry.lang}.ogg`);
     try {
       const { audioUrl } = await speak(entry.text, entry.lang);
       const res = await fetch(audioUrl);
       if (!res.ok) throw new Error(`speak() a renvoyé une URL inaccessible (${res.status})`);
       const buffer = Buffer.from(await res.arrayBuffer());
       writeFileSync(outPath, buffer);
-      console.log(`✅ ${entry.key}-${entry.lang}.wav (${buffer.length} octets)`);
+      console.log(`✅ ${entry.key}-${entry.lang}.ogg (${buffer.length} octets)`);
       ok++;
     } catch (err) {
-      console.error(`❌ ${entry.key}-${entry.lang}.wav :`, (err as Error).message);
+      console.error(`❌ ${entry.key}-${entry.lang}.ogg :`, (err as Error).message);
       failed++;
     }
   }

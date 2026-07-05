@@ -11,7 +11,7 @@
 import { getEnv } from "./env";
 
 export function pregeneratedAudioPath(key: string, lang: string): string {
-  return `/audio/${key}-${lang}.wav`;
+  return `/audio/${key}-${lang}.ogg`;
 }
 
 /**

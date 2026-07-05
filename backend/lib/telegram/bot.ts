@@ -209,7 +209,7 @@ async function sendMenuAudio(
   key: string,
   text: string,
   lang: LocalLang,
-  filename = "menu.wav"
+  filename = "menu.ogg"
 ): Promise<void> {
   try {
     // Ce texte est FIXE (déjà connu au moment du build, voir
@@ -219,16 +219,13 @@ async function sendMenuAudio(
     // encore pré-générée).
     const pregenerated = await fetchPregeneratedAudio(key, lang);
     const buffer = pregenerated ?? (await downloadAudio(await getCachedSpeechUrl(key, text, lang)));
-    // replyWithVoice (PAS utilisé ici) exige un fichier .ogg encodé en OPUS
-    // côté Bot API Telegram -- nos fichiers sont du WAV (sortie brute des
-    // modèles TTS, voir model-service/app/services/tts.py). Envoyé via
-    // sendVoice, Telegram le reçoit mais ne peut pas le lire comme message
-    // vocal (bulle illisible, parfois proposé en téléchargement externe qui
-    // échoue aussi puisque l'extension/le conteneur ne correspondent pas à
-    // ce que le lecteur attend). replyWithAudio n'impose pas ce codec et
-    // affiche un lecteur audio classique -- c'est déjà ce qu'utilise
-    // replyWithResult() pour les réponses IA, on aligne ici sur le même choix.
-    await ctx.replyWithAudio(new InputFile(buffer, filename));
+    // replyWithVoice exige un fichier .ogg encodé en OPUS côté Bot API
+    // Telegram -- TTS.speak() (model-service) encode maintenant exactement
+    // ça (voir model-service/app/services/tts.py _write_ogg_opus), donc
+    // c'est la bonne méthode : bulle "message vocal" classique, lisible
+    // partout. (Avant ce fix, on générait du WAV brut, illisible aussi bien
+    // par sendVoice -- OPUS requis -- que par sendAudio -- MP3/M4A requis.)
+    await ctx.replyWithVoice(new InputFile(buffer, filename));
   } catch (err) {
     console.error(`[telegram] audio menu "${key}" échouée:`, err);
     // Silencieux — le texte affiché reste disponible pour les usagers
@@ -254,12 +251,11 @@ async function sendLanguagePicker(ctx: Context): Promise<void> {
         (buf) => buf ?? getCachedSpeechUrl("welcome", WELCOME_AUDIO_TEXT_DYU, "dyu").then(downloadAudio),
       ),
     ]);
-    // replyWithAudio, pas replyWithVoice (voir le commentaire dans sendMenuAudio) :
-    // nos fichiers sont du WAV, pas de l'OGG/OPUS.
-    await ctx.replyWithAudio(new InputFile(mosBuf, "welcome_mos.wav"), {
+    // replyWithVoice : voir le commentaire dans sendMenuAudio (OGG/Opus réel maintenant).
+    await ctx.replyWithVoice(new InputFile(mosBuf, "welcome_mos.ogg"), {
       caption: "🗣️ Mooré ⬅️",
     });
-    await ctx.replyWithAudio(new InputFile(dyuBuf, "welcome_dyu.wav"), {
+    await ctx.replyWithVoice(new InputFile(dyuBuf, "welcome_dyu.ogg"), {
       caption: "🗣️ Dioula ➡️",
     });
   } catch (err) {
@@ -307,7 +303,7 @@ async function checkQuotaOrReply(
   if (!quota.allowed) {
     const message = QUOTA_REACHED_MESSAGES[lang] ?? QUOTA_REACHED_MESSAGES.fr;
     const messageBilingual = `${message} (${QUOTA_REACHED_MESSAGES.fr})`;
-    await sendMenuAudio(ctx, "quota_reached", message, lang, "quota.wav");
+    await sendMenuAudio(ctx, "quota_reached", message, lang, "quota.ogg");
     await ctx.reply(messageBilingual + "\n\nEnvoyez PAYER pour continuer aujourd'hui.");
     return false;
   }
@@ -332,12 +328,15 @@ async function replyWithResult(
   const caption = `${result.translated} (${result.sourceFr})\n${timingLine}`;
   try {
     const audioBuffer = await downloadAudio(result.audioUrl);
+    // replyWithVoice : model-service produit maintenant du OGG/Opus réel
+    // (voir model-service/app/services/tts.py), le format exigé par l'API
+    // Bot Telegram pour un message vocal.
     if (caption.length <= AUDIO_CAPTION_MAX_LENGTH) {
-      await ctx.replyWithAudio(new InputFile(audioBuffer, "reponse.wav"), { caption });
+      await ctx.replyWithVoice(new InputFile(audioBuffer, "reponse.ogg"), { caption });
     } else {
       // Légende Telegram limitée à 1024 caractères : si le fr ne rentre pas
       // avec le texte local, on l'envoie dans un message séparé qui suit.
-      await ctx.replyWithAudio(new InputFile(audioBuffer, "reponse.wav"), {
+      await ctx.replyWithVoice(new InputFile(audioBuffer, "reponse.ogg"), {
         caption: result.translated,
       });
       await ctx.reply(`(${result.sourceFr})\n${timingLine}`);
@@ -361,7 +360,7 @@ async function replyWithError(
   const catalog = isRateLimitError(err) ? ERR_RATE_LIMIT : ERR_GENERIC;
   const message = t(catalog, lang);
   if (lang !== "fr") {
-    await sendMenuAudio(ctx, isRateLimitError(err) ? "err_rate_limit" : "err_generic", message, lang, "erreur.wav");
+    await sendMenuAudio(ctx, isRateLimitError(err) ? "err_rate_limit" : "err_generic", message, lang, "erreur.ogg");
   }
   await ctx.reply(tBilingual(catalog, lang));
   console.error("[telegram]", err);
@@ -414,7 +413,7 @@ export function getBot(): Bot {
   bot.command("menu", async (ctx) => {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
-    await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
+    await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.ogg");
     await ctx.reply(tBilingual(ACTION_MENU, lang), {
       reply_markup: actionKeyboard(lang),
     });
@@ -424,7 +423,7 @@ export function getBot(): Bot {
   bot.command("document", async (ctx) => {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
-    await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
+    await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.ogg");
     await ctx.reply(tBilingual(GOV_DOC_MENU, lang), {
       reply_markup: govDocKeyboard(lang),
     });
@@ -514,7 +513,7 @@ export function getBot(): Bot {
     await ctx.answerCallbackQuery();
 
     // Afficher le menu des actions dans la langue choisie (audio d'abord)
-    await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.wav");
+    await sendMenuAudio(ctx, "action_menu", actionMenuAudioText(lang), lang, "menu.ogg");
     await ctx.reply(tBilingual(ACTION_MENU, lang), {
       reply_markup: actionKeyboard(lang),
     });
@@ -528,14 +527,14 @@ export function getBot(): Bot {
     await ctx.answerCallbackQuery();
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(EXPLAIN_DOC_PROMPT, lang ?? "fr");
-    if (lang) await sendMenuAudio(ctx, "explain_doc_prompt", message, lang, "invite.wav");
+    if (lang) await sendMenuAudio(ctx, "explain_doc_prompt", message, lang, "invite.ogg");
     await ctx.reply(tBilingual(EXPLAIN_DOC_PROMPT, lang ?? "fr"));
   });
 
   bot.callbackQuery("action:gov_doc", async (ctx) => {
     await ctx.answerCallbackQuery();
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
-    if (lang) await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.wav");
+    if (lang) await sendMenuAudio(ctx, "gov_doc_menu", govDocMenuAudioText(lang), lang, "documents.ogg");
     await ctx.reply(tBilingual(GOV_DOC_MENU, lang ?? "fr"), {
       reply_markup: govDocKeyboard(lang ?? "dyu"),
     });
@@ -545,7 +544,7 @@ export function getBot(): Bot {
     await ctx.answerCallbackQuery();
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(CHAT_PROMPT, lang ?? "fr");
-    if (lang) await sendMenuAudio(ctx, "chat_prompt", message, lang, "invite.wav");
+    if (lang) await sendMenuAudio(ctx, "chat_prompt", message, lang, "invite.ogg");
     await ctx.reply(tBilingual(CHAT_PROMPT, lang ?? "fr"));
   });
 
@@ -585,7 +584,7 @@ export function getBot(): Bot {
       "gov_doc_coming_soon",
       t(GOV_DOC_COMING_SOON_TTS, localLang),
       localLang,
-      "info_document.wav"
+      "info_document.ogg"
     );
 
     // 2. Envoyer le texte d'affichage avec le lien (fr entre parenthèses)
@@ -704,7 +703,7 @@ export function getBot(): Bot {
     const mimeType = ctx.message.document.mime_type ?? "";
     if (!mimeType.startsWith("image/") && mimeType !== "application/pdf") {
       const message = t(ERR_WRONG_FILE, lang);
-      await sendMenuAudio(ctx, "err_wrong_file", message, lang, "erreur.wav");
+      await sendMenuAudio(ctx, "err_wrong_file", message, lang, "erreur.ogg");
       await ctx.reply(tBilingual(ERR_WRONG_FILE, lang));
       return;
     }

@@ -5,9 +5,6 @@ __pycache__/
 *.pyc
 *.db
 *.wav
-# Exception : audio pré-généré pour les messages d'interface fixes du bot
-# Telegram (voir backend/scripts/pregenerate-audio.ts), déployé avec l'app.
-!backend/public/audio/*.wav
 *.log
 media/
 
