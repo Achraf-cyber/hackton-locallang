@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { STEP_LABELS, StepIndex } from "@/lib/demo/types";
 import { useDemoForm } from "@/lib/demo/DemoContext";
 import styles from "../../demo.module.css";
@@ -27,7 +28,7 @@ export function StepIndicator() {
                   idx < step ? styles.stepCircleDone : isCurrent ? styles.stepCircleDoing : ""
                 }`}
               >
-                {idx < step ? "✓" : index + 1}
+                {idx < step ? <Check size={14} /> : index + 1}
               </span>
               <span className={`${styles.stepLabel} ${isCurrent ? styles.stepLabelActive : ""}`}>
                 {label}

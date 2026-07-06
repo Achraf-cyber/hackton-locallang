@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { IdCard, Users, Paperclip, CreditCard, ScrollText, FileEdit, Eye } from "lucide-react";
 import { STEP_LABELS } from "@/lib/demo/types";
 import styles from "./demo.module.css";
 
-const STEP_ICONS = ["🪪", "👪", "📎", "💳", "🧾"];
+const STEP_ICONS = [IdCard, Users, Paperclip, CreditCard, ScrollText];
 
 export default function DemoLandingPage() {
   return (
@@ -21,13 +22,13 @@ export default function DemoLandingPage() {
       <div className={styles.landingCards}>
         <Link href="/demo/demande" className={styles.landingCard}>
           <span className={styles.landingCardIcon} aria-hidden>
-            📝
+            <FileEdit size={22} />
           </span>
           <span>Faire ma demande</span>
         </Link>
         <Link href="/demo/suivre" className={`${styles.landingCard} ${styles.landingCardGhost}`}>
           <span className={styles.landingCardIcon} aria-hidden>
-            👁️
+            <Eye size={22} />
           </span>
           <span>Suivre ma demande</span>
         </Link>
@@ -35,16 +36,19 @@ export default function DemoLandingPage() {
 
       <h2 className={styles.landingSectionTitle}>Comment obtenir son Casier Judiciaire ?</h2>
       <div className={styles.processSteps}>
-        {STEP_LABELS.map((label, index) => (
-          <div key={label} className={styles.processStep}>
-            <div className={styles.processStepDot}>{STEP_ICONS[index] ?? index + 1}</div>
-            <div className={styles.processStepLabel}>
-              {index + 1}
-              <br />
-              {label}
+        {STEP_LABELS.map((label, index) => {
+          const StepIcon = STEP_ICONS[index];
+          return (
+            <div key={label} className={styles.processStep}>
+              <div className={styles.processStepDot}>{StepIcon ? <StepIcon size={18} /> : index + 1}</div>
+              <div className={styles.processStepLabel}>
+                {index + 1}
+                <br />
+                {label}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </main>
   );

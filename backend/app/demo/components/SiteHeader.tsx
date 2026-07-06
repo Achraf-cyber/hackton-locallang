@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Landmark } from "lucide-react";
 import styles from "../demo.module.css";
 
 /** En-tete du site DEMO, presente sur toutes les pages /demo/* (voir layout.tsx). */
@@ -7,7 +8,7 @@ export function SiteHeader() {
     <header className={styles.siteHeader}>
       <Link href="/demo" className={styles.brand}>
         <span className={styles.brandIcon} aria-hidden>
-          🏛️
+          <Landmark size={20} />
         </span>
         <span>e-justice (DEMO)</span>
       </Link>
