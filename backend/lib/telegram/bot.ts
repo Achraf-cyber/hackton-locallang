@@ -28,6 +28,7 @@ import { fetchPregeneratedAudio } from "../pregeneratedAudio";
 import {
   t,
   tBilingual,
+  stripForSpeech,
   WELCOME_BILINGUAL_TEXT,
   WELCOME_AUDIO_TEXT_MOS,
   WELCOME_AUDIO_TEXT_DYU,
@@ -79,20 +80,25 @@ function langKeyboard(): InlineKeyboard {
     .text("Dioula ➡️", "lang:dyu");
 }
 
+// Puces numérotées : le même numéro est énoncé dans l'audio du menu (voir
+// buildMenuAudioText dans messages.ts) pour que l'usager qui ne lit pas
+// l'alphabet latin sache quel bouton correspond à quelle option entendue.
+const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+
 function actionKeyboard(lang: LocalLang): InlineKeyboard {
   return new InlineKeyboard()
-    .text(tBilingual(ACTION_EXPLAIN_DOC, lang), "action:explain_doc")
+    .text(`${NUMBER_EMOJIS[0]} ${tBilingual(ACTION_EXPLAIN_DOC, lang)}`, "action:explain_doc")
     .row()
-    .text(tBilingual(ACTION_GOV_DOC, lang), "action:gov_doc")
+    .text(`${NUMBER_EMOJIS[1]} ${tBilingual(ACTION_GOV_DOC, lang)}`, "action:gov_doc")
     .row()
-    .text(tBilingual(ACTION_CHAT, lang), "action:chat");
+    .text(`${NUMBER_EMOJIS[2]} ${tBilingual(ACTION_CHAT, lang)}`, "action:chat");
 }
 
 function govDocKeyboard(lang: LocalLang): InlineKeyboard {
   const kb = new InlineKeyboard();
-  for (const doc of GOV_DOCS) {
-    kb.text(govDocLabelBilingual(doc.key, lang), `govdoc:${doc.key}`).row();
-  }
+  GOV_DOCS.forEach((doc, i) => {
+    kb.text(`${NUMBER_EMOJIS[i]} ${govDocLabelBilingual(doc.key, lang)}`, `govdoc:${doc.key}`).row();
+  });
   return kb;
 }
 
@@ -218,7 +224,12 @@ async function sendMenuAudio(
     // une génération à la demande que s'il est absent (ex. nouvelle clé pas
     // encore pré-générée).
     const pregenerated = await fetchPregeneratedAudio(key, lang);
-    const buffer = pregenerated ?? (await downloadAudio(await getCachedSpeechUrl(key, text, lang)));
+    // Repli (fichier pré-généré absent) : on nettoie le texte des emojis/
+    // pictos avant le TTS — sendMenuAudio ne sert QUE pour des messages
+    // d'interface fixes, jamais du texte libre, donc ce strip est toujours sûr
+    // (et identique à celui de scripts/pregenerate-audio.ts).
+    const buffer =
+      pregenerated ?? (await downloadAudio(await getCachedSpeechUrl(key, stripForSpeech(text), lang)));
     // replyWithVoice exige un fichier .ogg encodé en OPUS côté Bot API
     // Telegram -- TTS.speak() (model-service) encode maintenant exactement
     // ça (voir model-service/app/services/tts.py _write_ogg_opus), donc
@@ -603,6 +614,7 @@ export function getBot(): Bot {
     if (!lang) return askLanguage(ctx);
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
+    await sendMenuAudio(ctx, "ack_listening", t(ACK_LISTENING, lang), lang, "ecoute.ogg");
     const ack = await ctx.reply(tBilingual(ACK_LISTENING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());
@@ -662,6 +674,7 @@ export function getBot(): Bot {
 
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
+    await sendMenuAudio(ctx, "ack_reading", t(ACK_READING, lang), lang, "lecture.ogg");
     const ack = await ctx.reply(tBilingual(ACK_READING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());
@@ -730,6 +743,7 @@ export function getBot(): Bot {
 
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
+    await sendMenuAudio(ctx, "ack_reading", t(ACK_READING, lang), lang, "lecture.ogg");
     const ack = await ctx.reply(tBilingual(ACK_READING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());
@@ -780,6 +794,7 @@ export function getBot(): Bot {
     if (casierSession) {
       if (ctx.message.text.trim().toUpperCase() === "ANNULER") {
         cancelCasierSession(ctx.chat.id);
+        await sendMenuAudio(ctx, "casier_cancelled", t(CASIER_CANCELLED, lang), lang, "annule.ogg");
         await ctx.reply(tBilingual(CASIER_CANCELLED, lang));
         return;
       }
@@ -824,6 +839,7 @@ export function getBot(): Bot {
 
     if (!(await checkQuotaOrReply(ctx, lang))) return;
 
+    await sendMenuAudio(ctx, "ack_thinking", t(ACK_THINKING, lang), lang, "reflexion.ogg");
     const ack = await ctx.reply(tBilingual(ACK_THINKING, lang));
     try {
       const dbUser = await resolveUser("telegram", ctx.chat.id.toString());

@@ -18,6 +18,36 @@ export function t(catalog: Trilingual, lang: LocalLang | "fr"): string {
 }
 
 /**
+ * Nettoie un libellé destiné à la SYNTHÈSE VOCALE : retire emojis, drapeaux,
+ * flèches et pictogrammes (⬇️ 📄 🏛️ 💬 🇧🇫 ...) puis normalise les espaces.
+ * Ces symboles, laissés dans le texte envoyé au TTS, sont soit prononcés
+ * n'importe comment soit ignorés — dans les deux cas ils dégradent l'audio.
+ * On ne conserve que ce qui se prononce réellement.
+ */
+export function stripForSpeech(text: string): string {
+  return text
+    .replace(
+      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{2300}-\u{23FF}\u{FE0F}\u{20E3}\u{200D}]/gu,
+      "",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Construit un texte audio qui ÉNONCE chaque bouton dans l'ordre où le clavier
+ * l'affiche, préfixé de son numéro (« 1. … 2. … »). Les usagers dyu/mos ciblés
+ * ne lisent pas l'alphabet latin : l'audio doit dire explicitement le rang de
+ * chaque bouton pour qu'ils sachent lequel toucher, et les boutons portent le
+ * même numéro à l'écran (voir bot.ts, préfixes 1️⃣2️⃣3️⃣). Réutilise les libellés
+ * déjà relus (aucune nouvelle traduction) et les nettoie pour le TTS.
+ */
+export function buildMenuAudioText(intro: string, optionLabels: string[]): string {
+  const lines = optionLabels.map((label, i) => `${i + 1}. ${stripForSpeech(label)}`);
+  return [stripForSpeech(intro), ...lines].join(". ");
+}
+
+/**
  * Comme `t()`, mais ajoute la traduction française entre parenthèses quand
  * `lang` est une langue locale (dyu/mos) : la majorité des usagers ciblés ne
  * lisent pas l'alphabet latin, mais certains lecteurs (agents relais,
@@ -89,9 +119,11 @@ export const ACTION_CHAT: Trilingual = {
  * (aucune nouvelle traduction, donc aucun nouveau risque de contresens).
  */
 export function actionMenuAudioText(lang: LocalLang): string {
-  return [t(ACTION_MENU, lang), t(ACTION_EXPLAIN_DOC, lang), t(ACTION_GOV_DOC, lang), t(ACTION_CHAT, lang)].join(
-    ". ",
-  );
+  return buildMenuAudioText(t(ACTION_MENU, lang), [
+    t(ACTION_EXPLAIN_DOC, lang),
+    t(ACTION_GOV_DOC, lang),
+    t(ACTION_CHAT, lang),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +190,10 @@ export function govDocUrl(key: GovDocKey): string {
  * que `actionMenuAudioText` : réutilise les libellés déjà traduits.
  */
 export function govDocMenuAudioText(lang: LocalLang): string {
-  return [t(GOV_DOC_MENU, lang), ...GOV_DOCS.map((d) => govDocLabel(d.key, lang))].join(". ");
+  return buildMenuAudioText(
+    t(GOV_DOC_MENU, lang),
+    GOV_DOCS.map((d) => govDocLabel(d.key, lang)),
+  );
 }
 
 // ---------------------------------------------------------------------------

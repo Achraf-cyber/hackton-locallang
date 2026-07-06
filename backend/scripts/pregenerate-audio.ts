@@ -39,6 +39,7 @@ async function main() {
   const { speak } = await import("../lib/modelService");
   const {
     t,
+    stripForSpeech,
     WELCOME_AUDIO_TEXT_MOS,
     WELCOME_AUDIO_TEXT_DYU,
     ERR_RATE_LIMIT,
@@ -47,6 +48,10 @@ async function main() {
     EXPLAIN_DOC_PROMPT,
     CHAT_PROMPT,
     GOV_DOC_COMING_SOON_TTS,
+    ACK_LISTENING,
+    ACK_READING,
+    ACK_THINKING,
+    CASIER_CANCELLED,
     actionMenuAudioText,
     govDocMenuAudioText,
   } = await import("../lib/messages");
@@ -58,6 +63,11 @@ async function main() {
   // exactement les appels sendMenuAudio()/getCachedSpeechUrl() de
   // lib/telegram/bot.ts. Si un nouveau message fixe est ajouté au bot,
   // ajoutez-le ici pour qu'il soit aussi pré-généré.
+  //
+  // stripForSpeech() est appliqué au texte de CHAQUE entrée (comme le fait
+  // sendMenuAudio côté bot) pour que le TTS ne reçoive jamais d'emoji/picto :
+  // le fichier pré-généré doit être identique à ce que produirait le repli.
+  // actionMenuAudioText/govDocMenuAudioText nettoient déjà en interne.
   const entries: { key: string; lang: "mos" | "dyu"; text: string }[] = [];
   for (const lang of LANGS) {
     entries.push({ key: "welcome", lang, text: lang === "mos" ? WELCOME_AUDIO_TEXT_MOS : WELCOME_AUDIO_TEXT_DYU });
@@ -70,10 +80,24 @@ async function main() {
     entries.push({ key: "explain_doc_prompt", lang, text: t(EXPLAIN_DOC_PROMPT, lang) });
     entries.push({ key: "chat_prompt", lang, text: t(CHAT_PROMPT, lang) });
     entries.push({ key: "gov_doc_coming_soon", lang, text: t(GOV_DOC_COMING_SOON_TTS, lang) });
+    entries.push({ key: "ack_listening", lang, text: t(ACK_LISTENING, lang) });
+    entries.push({ key: "ack_reading", lang, text: t(ACK_READING, lang) });
+    entries.push({ key: "ack_thinking", lang, text: t(ACK_THINKING, lang) });
+    entries.push({ key: "casier_cancelled", lang, text: t(CASIER_CANCELLED, lang) });
   }
+  // Nettoyage TTS uniforme (les deux builders de menu nettoient déjà, strip
+  // est idempotent donc les ré-appliquer est sans effet).
+  for (const entry of entries) entry.text = stripForSpeech(entry.text);
 
   const outDir = join(__dirname, "..", "public", "audio");
   mkdirSync(outDir, { recursive: true });
+
+  // Un vrai clip Opus parlé fait au minimum quelques kilo-octets ; en dessous,
+  // le TTS a renvoyé un fichier vide/silencieux (« ne fonctionne pas »). On le
+  // traite comme un échec plutôt que d'écrire un fichier muet qui passerait
+  // inaperçu jusqu'à ce qu'un usager l'entende.
+  const MIN_VALID_BYTES = 2000;
+  const OGG_MAGIC = Buffer.from("OggS");
 
   let ok = 0;
   let failed = 0;
@@ -84,6 +108,12 @@ async function main() {
       const res = await fetch(audioUrl);
       if (!res.ok) throw new Error(`speak() a renvoyé une URL inaccessible (${res.status})`);
       const buffer = Buffer.from(await res.arrayBuffer());
+      if (!buffer.subarray(0, 4).equals(OGG_MAGIC)) {
+        throw new Error("le fichier renvoyé n'est pas un conteneur OGG (en-tête OggS absent)");
+      }
+      if (buffer.length < MIN_VALID_BYTES) {
+        throw new Error(`clip trop court (${buffer.length} octets < ${MIN_VALID_BYTES}) — probablement muet`);
+      }
       writeFileSync(outPath, buffer);
       console.log(`✅ ${entry.key}-${entry.lang}.ogg (${buffer.length} octets)`);
       ok++;
