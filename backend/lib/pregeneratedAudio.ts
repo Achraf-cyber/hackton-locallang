@@ -15,18 +15,33 @@ export function pregeneratedAudioPath(key: string, lang: string): string {
 }
 
 /**
- * URL de CE déploiement pour se relire soi-même (public/audio/*.wav). Utilise
- * VERCEL_URL en priorité : Vercel le définit automatiquement sur CHAQUE
- * déploiement (prod ou preview), sans configuration manuelle -- contrairement
- * à DEMO_BASE_URL (variable configurée à la main dans les Secrets du projet,
- * qui pourrait rester sur son défaut localhost si on oublie de la renseigner
- * en prod, ce qui casserait silencieusement ce fallback en prod). Ne retombe
- * sur DEMO_BASE_URL que hors Vercel (dev local).
+ * URL de CE déploiement pour se relire soi-même (public/audio/*.ogg).
+ *
+ * IMPORTANT : VERCEL_URL pointe vers le nom d'hôte *spécifique à ce
+ * déploiement* (ex. hackton-locallang-<hash>-<team>.vercel.app), qui est
+ * couvert par la "Vercel Authentication" (Deployment Protection) de ce
+ * projet -- confirmé en prod : une requête vers cette URL renvoie une 302
+ * vers vercel.com/sso-api (page de login), jamais le fichier audio. Résultat
+ * AVANT ce fix : fetchPregeneratedAudio() échouait silencieusement à CHAQUE
+ * appel en prod (res.ok faux, ou pire, un flux HTML de login confondu avec
+ * de l'audio), et le bot retombait systématiquement sur la génération TTS
+ * à la volée -- gaspillant tout le travail de pré-génération.
+ *
+ * VERCEL_PROJECT_PRODUCTION_URL, également défini automatiquement par
+ * Vercel, pointe lui vers le domaine assigné au projet (l'alias
+ * *.vercel.app ou domaine custom), qui n'est PAS derrière ce mur
+ * d'authentification (confirmé : réponse 200 directe). À utiliser en
+ * priorité ; VERCEL_URL reste un repli pour les cas où seule cette variable
+ * serait définie (ne devrait plus arriver sur Vercel récent), et
+ * DEMO_BASE_URL le dernier repli pour le dev local hors Vercel.
  */
 function ownBaseUrl(): string {
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return getEnv().DEMO_BASE_URL.replace(/\/$/, "");
 }
+
+const OGG_MAGIC = Buffer.from("OggS");
 
 /** Tente de récupérer un audio pré-généré ; renvoie null si absent (l'appelant doit alors générer en direct). */
 export async function fetchPregeneratedAudio(key: string, lang: string): Promise<Buffer | null> {
@@ -34,7 +49,13 @@ export async function fetchPregeneratedAudio(key: string, lang: string): Promise
   try {
     const res = await fetch(`${baseUrl}${pregeneratedAudioPath(key, lang)}`);
     if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
+    const buffer = Buffer.from(await res.arrayBuffer());
+    // Garde-fou : un mur d'auth/redirect mal configuré peut renvoyer une
+    // page HTML avec un statut 200 (ex. après avoir suivi une redirection de
+    // login) -- vérifier l'en-tête OGG réel plutôt que de faire confiance à
+    // res.ok seul, pour ne jamais transmettre autre chose que de l'audio.
+    if (!buffer.subarray(0, 4).equals(OGG_MAGIC)) return null;
+    return buffer;
   } catch {
     return null;
   }
