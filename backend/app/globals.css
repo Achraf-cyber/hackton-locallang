@@ -3,15 +3,27 @@
   --foreground: #171717;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/*
+ * Ce site n'a PAS de thème sombre : .page (page.module.css) impose une
+ * palette claire en dur, sans la moindre variante pour --text-primary,
+ * --accent, etc. L'ancien bloc `@media (prefers-color-scheme: dark)` (reliquat
+ * du template create-next-app par défaut) changeait quand même --foreground/
+ * --background ET posait `color-scheme: dark` sur <html> dès que l'OS/
+ * navigateur préfère le sombre -- ce qui annonce au navigateur "ce document
+ * est en mode sombre" alors que le rendu reste entièrement clair. Ce
+ * décalage déclenche des ajustements de couleur automatiques et
+ * incohérents selon les navigateurs (heuristiques de "dark mode forcé",
+ * ex. Brave) : deux éléments utilisant EXACTEMENT les mêmes variables CSS
+ * (ex. .quotaBadge et .brandBadge, toutes deux `color: var(--accent)` sur
+ * `background: var(--accent-soft)`) pouvaient alors s'afficher avec un
+ * contraste très différent -- signalé par un usager en navigateur sombre,
+ * jamais reproductible en clair. Fix : ne jamais laisser le navigateur
+ * deviner, déclarer explicitement `color-scheme: light` (voir plus bas).
+ */
 
 html {
   height: 100%;
+  color-scheme: light;
 }
 
 html,
@@ -40,10 +52,4 @@ body {
 a {
   color: inherit;
   text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
 }
