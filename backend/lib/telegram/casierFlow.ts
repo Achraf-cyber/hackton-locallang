@@ -7,15 +7,22 @@
  *   4. remplissage + soumission automatique du site DEMO (lib/demoAutomation.ts)
  *   5. livraison fiable du récépissé PDF (sendDocumentReliably, bot.ts)
  *
- * État de session en mémoire process (Map), PAS en base de données : suffit
- * pour une démo (une session par chat, courte durée de vie), à remplacer par
- * une table Prisma si ce flux doit survivre à un redémarrage du serveur ou
- * fonctionner sur plusieurs instances.
+ * État de session persisté en base (table CasierSession, voir
+ * prisma/schema.prisma) -- PAS en mémoire process (une Map, comme avant).
+ * Bug confirmé en usage réel avec la Map : rien ne garantit qu'une fonction
+ * serverless Vercel réutilise la même instance chaude entre le webhook
+ * Telegram qui démarre la session (callback "casier") et le webhook suivant
+ * qui envoie le document -- sur une instance froide différente, la Map était
+ * vide, isAwaitingCasierDocument() renvoyait faux, et la photo tombait dans
+ * le flux générique "expliquer un document" au lieu d'être traitée comme
+ * pièce du dossier. Une table Prisma est visible par toute instance.
  */
 import type { LocalLang } from "../modelService";
 import { extractIdentityFields } from "../llm";
 import { submitCasierDemande, type CasierDocument } from "../demoAutomation";
 import { EMPTY_FORM_STATE, type DemoFormState } from "../demo/types";
+import { prisma } from "../db";
+import type { Prisma } from "@prisma/client";
 import {
   NATIONALITE_OPTIONS,
   PAYS_OPTIONS,
@@ -32,6 +39,7 @@ import {
   matchFieldAnswer,
   matchOptionValue,
   casierFieldAudioKey,
+  FIELD_ORDER,
   type CasierFields,
   type FieldSpec,
 } from "./casierFields";
@@ -51,48 +59,95 @@ interface CasierSession {
   pendingField: FieldSpec | null;
   doc1: CasierDocument | null;
   doc2: CasierDocument | null;
-  lastActivityAt: number;
 }
 
 // Une session abandonnée (usager qui ne répond plus) ne doit ni fuiter en
-// mémoire indéfiniment, ni intercepter éternellement les photos/documents
-// suivants de ce chat comme s'ils faisaient partie du flux casier.
+// base indéfiniment (elle retient les buffers bruts des 2 documents
+// uploadés, plusieurs Mo chacun), ni intercepter éternellement les photos/
+// documents suivants de ce chat comme si elles faisaient partie du flux
+// casier. Purgée "à l'accès" (loadSession supprime et traite comme absente
+// une session expirée) -- pas de balayage périodique global : un
+// setInterval() ne survit de toute façon pas de façon fiable entre les
+// invocations d'une fonction serverless (même problème que la Map qu'on
+// remplace ici), donc autant ne pas prétendre en avoir un qui fonctionne.
 const SESSION_TTL_MS = 20 * 60 * 1000;
-
-const sessions = new Map<string, CasierSession>();
 
 function sessionKey(chatId: number | string): string {
   return String(chatId);
 }
 
-/** Purge la session si elle a expiré (inactive depuis SESSION_TTL_MS). */
-function pruneIfExpired(key: string): void {
-  const session = sessions.get(key);
-  if (session && Date.now() - session.lastActivityAt > SESSION_TTL_MS) {
-    sessions.delete(key);
-  }
+function rowToSession(row: {
+  lang: string;
+  step: string;
+  fields: Prisma.JsonValue;
+  pendingFieldKey: string | null;
+  doc1Buffer: Uint8Array | null;
+  doc1MimeType: string | null;
+  doc1FileName: string | null;
+  doc2Buffer: Uint8Array | null;
+  doc2MimeType: string | null;
+  doc2FileName: string | null;
+}): CasierSession {
+  return {
+    lang: row.lang as LocalLang,
+    step: row.step as CasierStep,
+    fields: (row.fields as CasierFields | null) ?? {},
+    pendingField: row.pendingFieldKey
+      ? (FIELD_ORDER.find((f) => f.key === row.pendingFieldKey) ?? null)
+      : null,
+    doc1:
+      row.doc1Buffer && row.doc1MimeType && row.doc1FileName
+        ? { buffer: Buffer.from(row.doc1Buffer), mimeType: row.doc1MimeType, fileName: row.doc1FileName }
+        : null,
+    doc2:
+      row.doc2Buffer && row.doc2MimeType && row.doc2FileName
+        ? { buffer: Buffer.from(row.doc2Buffer), mimeType: row.doc2MimeType, fileName: row.doc2FileName }
+        : null,
+  };
 }
 
-// La purge "à l'accès" (pruneIfExpired ci-dessus) ne nettoie que la session
-// du chat qui redevient actif — une session abandonnée pour de bon (l'usager
-// ne revient jamais) ne serait donc JAMAIS purgée : elle retient potentiellement
-// les buffers bruts des documents uploadés (plusieurs Mo chacun) indéfiniment.
-// Ce balayage périodique parcourt TOUTES les sessions, pas seulement celle
-// consultée.
-const GLOBAL_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, session] of sessions) {
-    if (now - session.lastActivityAt > SESSION_TTL_MS) {
-      sessions.delete(key);
-    }
-  }
-}, GLOBAL_SWEEP_INTERVAL_MS).unref();
-
-export function hasActiveCasierSession(chatId: number | string): boolean {
+/** Charge la session depuis la base ; null si absente OU expirée (et alors supprimée). */
+async function loadSession(chatId: number | string): Promise<CasierSession | null> {
   const key = sessionKey(chatId);
-  pruneIfExpired(key);
-  return sessions.has(key);
+  const row = await prisma.casierSession.findUnique({ where: { chatId: key } });
+  if (!row) return null;
+  if (Date.now() - row.lastActivityAt.getTime() > SESSION_TTL_MS) {
+    await prisma.casierSession.delete({ where: { chatId: key } }).catch(() => {});
+    return null;
+  }
+  return rowToSession(row);
+}
+
+/** Écrit (crée ou remplace) l'état complet de la session, et rafraîchit lastActivityAt. */
+async function saveSession(chatId: number | string, session: CasierSession): Promise<void> {
+  const key = sessionKey(chatId);
+  const data = {
+    lang: session.lang,
+    step: session.step,
+    fields: session.fields as Prisma.InputJsonValue,
+    pendingFieldKey: session.pendingField?.key ?? null,
+    // `as Uint8Array | undefined` : Node's Buffer (ArrayBufferLike) et le
+    // Uint8Array<ArrayBuffer> attendu par le client Prisma généré diffèrent
+    // sur ce paramètre générique précis alors qu'un Buffer EST un Uint8Array
+    // valide à l'exécution -- friction de typage connue entre @types/node et
+    // Prisma, pas un vrai risque à l'exécution.
+    doc1Buffer: session.doc1?.buffer as any,
+    doc1MimeType: session.doc1?.mimeType,
+    doc1FileName: session.doc1?.fileName,
+    doc2Buffer: session.doc2?.buffer as any,
+    doc2MimeType: session.doc2?.mimeType,
+    doc2FileName: session.doc2?.fileName,
+    lastActivityAt: new Date(),
+  };
+  await prisma.casierSession.upsert({
+    where: { chatId: key },
+    create: { chatId: key, ...data },
+    update: data,
+  });
+}
+
+export async function hasActiveCasierSession(chatId: number | string): Promise<boolean> {
+  return (await loadSession(chatId)) !== null;
 }
 
 /**
@@ -108,40 +163,29 @@ export function hasActiveCasierSession(chatId: number | string): boolean {
  * une session casier active à une étape qui n'attendait pourtant aucun
  * document.
  */
-export function isAwaitingCasierDocument(chatId: number | string): boolean {
-  const session = getCasierSession(chatId);
+export async function isAwaitingCasierDocument(chatId: number | string): Promise<boolean> {
+  const session = await loadSession(chatId);
   return session?.step === "awaiting_doc1" || session?.step === "awaiting_doc2";
 }
 
-export function getCasierSession(chatId: number | string): CasierSession | undefined {
-  const key = sessionKey(chatId);
-  pruneIfExpired(key);
-  return sessions.get(key);
+export async function getCasierSession(chatId: number | string): Promise<CasierSession | null> {
+  return loadSession(chatId);
 }
 
-export function startCasierSession(chatId: number | string, lang: LocalLang): void {
-  sessions.set(sessionKey(chatId), {
+export async function startCasierSession(chatId: number | string, lang: LocalLang): Promise<void> {
+  await saveSession(chatId, {
     lang,
     step: "awaiting_doc1",
     fields: {},
     pendingField: null,
     doc1: null,
     doc2: null,
-    lastActivityAt: Date.now(),
   });
 }
 
 /** Annule une session en cours (ex. sur /start ou /annuler) — no-op si aucune session active. */
-export function cancelCasierSession(chatId: number | string): void {
-  clearSession(chatId);
-}
-
-function clearSession(chatId: number | string): void {
-  sessions.delete(sessionKey(chatId));
-}
-
-function touch(session: CasierSession): void {
-  session.lastActivityAt = Date.now();
+export async function cancelCasierSession(chatId: number | string): Promise<void> {
+  await prisma.casierSession.delete({ where: { chatId: sessionKey(chatId) } }).catch(() => {});
 }
 
 // Traductions best-effort, non relues par un locuteur natif -- voir le
@@ -315,15 +359,15 @@ export async function handleCasierDocument(
   mimeType: string,
   fileName: string,
 ): Promise<CasierStepResult> {
-  const session = sessions.get(sessionKey(chatId));
+  const session = await loadSession(chatId);
   if (!session) throw new Error("Aucune session casier active pour ce chat.");
-  touch(session);
 
   if (session.step === "awaiting_doc1") {
     session.doc1 = { buffer, mimeType, fileName };
     const extracted = await extractIdentityFields(buffer, mimeType);
     mergeExtracted(session, extracted as unknown as Record<string, unknown>);
     session.step = "awaiting_doc2";
+    await saveSession(chatId, session);
     const reply = casierAskDoc2(session.lang);
     return {
       reply,
@@ -337,7 +381,7 @@ export async function handleCasierDocument(
     session.doc2 = { buffer, mimeType, fileName };
     const extracted = await extractIdentityFields(buffer, mimeType);
     mergeExtracted(session, extracted as unknown as Record<string, unknown>);
-    return advanceToNextFieldOrRecap(session);
+    return advanceToNextFieldOrRecap(chatId, session);
   }
 
   throw new Error(`Document reçu hors séquence (étape actuelle: ${session.step}).`);
@@ -348,11 +392,10 @@ export async function handleCasierTextAnswer(
   chatId: number | string,
   rawAnswer: string,
 ): Promise<CasierStepResult> {
-  const session = sessions.get(sessionKey(chatId));
+  const session = await loadSession(chatId);
   if (!session) {
     throw new Error("Aucune session casier active pour ce chat.");
   }
-  touch(session);
 
   if (session.step === "awaiting_confirmation") {
     return handleConfirmationAnswer(chatId, session, rawAnswer);
@@ -365,6 +408,10 @@ export async function handleCasierTextAnswer(
   const spec = session.pendingField;
   const matched = matchFieldAnswer(spec, rawAnswer, session.fields);
   if (matched === null) {
+    // Rien n'a changé, mais on réécrit quand même pour rafraîchir
+    // lastActivityAt (évite une expiration prématurée pendant qu'un usager
+    // hésite sur sa réponse).
+    await saveSession(chatId, session);
     const notRecognized = tBilingual(CASIER_ANSWER_NOT_RECOGNIZED, session.lang);
     return {
       reply: `${notRecognized}\n${formatFieldPrompt(spec, session.fields, session.lang)}`,
@@ -390,7 +437,7 @@ export async function handleCasierTextAnswer(
     delete session.fields.arrondissementNaissance;
   }
 
-  return advanceToNextFieldOrRecap(session);
+  return advanceToNextFieldOrRecap(chatId, session);
 }
 
 /**
@@ -407,6 +454,7 @@ async function handleConfirmationAnswer(
   rawAnswer: string,
 ): Promise<CasierStepResult> {
   if (rawAnswer.trim().toUpperCase() !== "CONFIRMER") {
+    await saveSession(chatId, session); // rafraîchit lastActivityAt
     return {
       reply: `${tBilingual(CASIER_ANSWER_NOT_RECOGNIZED, session.lang)}\n${buildRecapText(session.fields)}\n\n${tBilingual(CASIER_CONFIRM_PROMPT, session.lang)}`,
       done: false,
@@ -425,11 +473,15 @@ async function handleConfirmationAnswer(
  * dernier champ répondu, sans jamais laisser l'usager relire/corriger ce
  * qui allait être envoyé.
  */
-async function advanceToNextFieldOrRecap(session: CasierSession): Promise<CasierStepResult> {
+async function advanceToNextFieldOrRecap(
+  chatId: number | string,
+  session: CasierSession,
+): Promise<CasierStepResult> {
   const next = getNextMissingField(session.fields);
   if (next) {
     session.step = "awaiting_field";
     session.pendingField = next;
+    await saveSession(chatId, session);
     const reply = formatFieldPrompt(next, session.fields, session.lang);
     const audioKey = casierFieldAudioKey(next.key);
     return {
@@ -448,6 +500,7 @@ async function advanceToNextFieldOrRecap(session: CasierSession): Promise<Casier
 
   session.step = "awaiting_confirmation";
   session.pendingField = null;
+  await saveSession(chatId, session);
   return {
     reply: `${buildRecapText(session.fields)}\n\n${tBilingual(CASIER_CONFIRM_PROMPT, session.lang)}`,
     done: false,
@@ -466,6 +519,7 @@ async function finalizeCasierSubmission(
   session: CasierSession,
 ): Promise<CasierStepResult> {
   session.step = "processing";
+  await saveSession(chatId, session);
   try {
     const formState = buildFormState(session);
     if (!session.doc1 || !session.doc2) {
@@ -476,7 +530,7 @@ async function finalizeCasierSubmission(
       pieceIdentite: session.doc2,
     });
     const successLine = tBilingual(CASIER_SUCCESS, session.lang);
-    clearSession(chatId);
+    await cancelCasierSession(chatId);
     return {
       reply: `${successLine} ${result.referenceCode}.`,
       done: true,
@@ -490,7 +544,7 @@ async function finalizeCasierSubmission(
       audioText: t(CASIER_SUCCESS, session.lang),
     };
   } catch (err) {
-    clearSession(chatId);
+    await cancelCasierSession(chatId);
     throw err;
   }
 }

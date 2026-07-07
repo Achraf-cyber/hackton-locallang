@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Bot Telegram (grammY) — client interne du backend.
  *
  * Le bot n'appelle JAMAIS Gemini ni le service modèles directement : il passe
@@ -439,7 +439,7 @@ export function getBot(): Bot {
     // Redémarrer abandonne tout flux "casier judiciaire" en cours : sinon la
     // session en mémoire reste active et intercepte les prochains messages
     // (photo/document/texte) comme si l'usager était encore dedans.
-    if (ctx.chat) cancelCasierSession(ctx.chat.id);
+    if (ctx.chat) await cancelCasierSession(ctx.chat.id);
     await sendLanguagePicker(ctx);
   });
 
@@ -564,7 +564,7 @@ export function getBot(): Bot {
     // voir isAwaitingCasierDocument) ne doit plus intercepter la prochaine
     // photo envoyée -- ce choix de menu EST le signal de sortie du flux
     // casier, pas seulement le bouton dédié ou "ANNULER".
-    if (ctx.chat && hasActiveCasierSession(ctx.chat.id)) cancelCasierSession(ctx.chat.id);
+    if (ctx.chat && await hasActiveCasierSession(ctx.chat.id)) await cancelCasierSession(ctx.chat.id);
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(EXPLAIN_DOC_PROMPT, lang ?? "fr");
     if (lang) await sendMenuAudio(ctx, "explain_doc_prompt", message, lang, "invite.ogg");
@@ -583,7 +583,7 @@ export function getBot(): Bot {
   bot.callbackQuery("action:chat", async (ctx) => {
     await ctx.answerCallbackQuery();
     // Même raisonnement que action:explain_doc ci-dessus.
-    if (ctx.chat && hasActiveCasierSession(ctx.chat.id)) cancelCasierSession(ctx.chat.id);
+    if (ctx.chat && await hasActiveCasierSession(ctx.chat.id)) await cancelCasierSession(ctx.chat.id);
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(CHAT_PROMPT, lang ?? "fr");
     if (lang) await sendMenuAudio(ctx, "chat_prompt", message, lang, "invite.ogg");
@@ -596,9 +596,9 @@ export function getBot(): Bot {
   bot.callbackQuery("casier:cancel", async (ctx) => {
     await ctx.answerCallbackQuery();
     if (!ctx.chat) return;
-    const session = getCasierSession(ctx.chat.id);
+    const session = await getCasierSession(ctx.chat.id);
     const lang = session?.lang ?? (await requireLang(ctx.chat.id)) ?? "dyu";
-    cancelCasierSession(ctx.chat.id);
+    await cancelCasierSession(ctx.chat.id);
     await sendMenuAudio(ctx, "casier_cancelled", t(CASIER_CANCELLED, lang), lang, "annule.ogg");
     await ctx.reply(tBilingual(CASIER_CANCELLED, lang));
   });
@@ -622,7 +622,7 @@ export function getBot(): Bot {
     // Les autres options du menu restent des liens "bientôt disponible".
     if (key === "casier" && ctx.chat) {
       const casierLang: LocalLang = lang === "fr" ? "dyu" : lang;
-      startCasierSession(ctx.chat.id, casierLang);
+      await startCasierSession(ctx.chat.id, casierLang);
       await sendMenuAudio(ctx, CASIER_ASK_DOC1_AUDIO_KEY, t(CASIER_ASK_DOC1_CATALOG, casierLang), casierLang, "casier.ogg");
       await ctx.reply(casierAskDoc1(casierLang), { reply_markup: casierCancelKeyboard(casierLang) });
       return;
@@ -709,7 +709,7 @@ export function getBot(): Bot {
     // session active à une AUTRE étape (question texte en cours, récap en
     // attente de confirmation...) ne doit plus intercepter cette photo --
     // laisser passer vers l'explication générale ci-dessous.
-    if (isAwaitingCasierDocument(ctx.chat.id)) {
+    if (await isAwaitingCasierDocument(ctx.chat.id)) {
       if (!(await checkQuotaOrReply(ctx, lang))) return;
       try {
         const largest = ctx.message.photo.at(-1)!;
@@ -774,7 +774,7 @@ export function getBot(): Bot {
     // Document reçu PENDANT QUE LE BOT L'ATTEND : à extraire, pas à
     // expliquer (voir même branche + même raisonnement sur message:photo
     // ci-dessus, y compris pour la consommation de quota).
-    if (isAwaitingCasierDocument(ctx.chat.id)) {
+    if (await isAwaitingCasierDocument(ctx.chat.id)) {
       if (!(await checkQuotaOrReply(ctx, lang))) return;
       try {
         const buffer = await downloadTelegramFile(bot, ctx.message.document.file_id);
@@ -840,10 +840,10 @@ export function getBot(): Bot {
     if (!lang) return askLanguage(ctx);
 
     // Réponse à une question du flux "casier judiciaire" (voir casierFlow.ts)
-    const casierSession = getCasierSession(ctx.chat.id);
+    const casierSession = await getCasierSession(ctx.chat.id);
     if (casierSession) {
       if (ctx.message.text.trim().toUpperCase() === "ANNULER") {
-        cancelCasierSession(ctx.chat.id);
+        await cancelCasierSession(ctx.chat.id);
         await sendMenuAudio(ctx, "casier_cancelled", t(CASIER_CANCELLED, lang), lang, "annule.ogg");
         await ctx.reply(tBilingual(CASIER_CANCELLED, lang));
         return;
