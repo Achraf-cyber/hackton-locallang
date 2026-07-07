@@ -17,7 +17,6 @@ import {
   ChevronRight,
   BookOpen,
   HelpCircle,
-  Sparkles,
   Volume2,
   User,
   Zap,
@@ -346,9 +345,6 @@ export default function Home() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.blobOne} aria-hidden />
-      <div className={styles.blobTwo} aria-hidden />
-
       {/* Modern High-Grade Navbar */}
       <nav className={styles.navbar}>
         <div className={styles.navContainer}>
@@ -380,10 +376,6 @@ export default function Home() {
       <main className={styles.main}>
         {/* Hero Section */}
         <section className={styles.heroSection}>
-          <div className={styles.brandBadge}>
-            <Sparkles size={14} className={styles.brandIcon} />
-            <span>L&apos;intelligence artificielle souveraine pour nos langues locales</span>
-          </div>
           <h1 className={styles.title}>Brisez les barrières de la langue.</h1>
           <p className={styles.subtitle}>
             Traduisez instantanément et lisez des documents en <strong>Dioula</strong> et <strong>Mooré</strong> grâce à nos modèles de deep learning souverains.
