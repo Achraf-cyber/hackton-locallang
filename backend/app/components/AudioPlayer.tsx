@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Play, Pause } from "lucide-react";
 import styles from "./AudioPlayer.module.css";
 
 interface AudioPlayerProps {
@@ -66,7 +67,7 @@ export default function AudioPlayer({ src, autoPlay, label }: AudioPlayerProps) 
         onClick={toggle}
         aria-label={playing ? "Mettre en pause" : "Écouter"}
       >
-        {playing ? "⏸️" : "▶️"}
+        {playing ? <Pause className={styles.btnIcon} size={18} /> : <Play className={styles.btnIcon} size={18} fill="currentColor" />}
       </button>
       <div className={styles.body}>
         {label && <span className={styles.label}>{label}</span>}
