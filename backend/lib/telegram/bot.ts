@@ -65,6 +65,8 @@ import {
   handleCasierTextAnswer,
   cancelCasierSession,
   casierAskDoc1,
+  CASIER_ASK_DOC1_CATALOG,
+  CASIER_ASK_DOC1_AUDIO_KEY,
   type CasierStepResult,
 } from "./casierFlow";
 
@@ -184,7 +186,10 @@ async function sendDocumentReliably(
  * question/document attendu), soit — quand `result.done` — la livraison
  * fiable du récépissé PDF final.
  */
-async function replyToCasierStep(ctx: Context, result: CasierStepResult): Promise<void> {
+async function replyToCasierStep(ctx: Context, result: CasierStepResult, lang: LocalLang): Promise<void> {
+  if (result.audioKey && result.audioText) {
+    await sendMenuAudio(ctx, result.audioKey, result.audioText, lang, "casier.ogg");
+  }
   await ctx.reply(result.reply);
   if (!result.done) return;
 
@@ -207,6 +212,7 @@ async function replyToCasierStep(ctx: Context, result: CasierStepResult): Promis
 /** Gère une erreur survenue pendant une étape du flux casier (extraction, automatisation...). */
 async function replyToCasierError(ctx: Context, err: unknown, lang: LocalLang | "fr" = "fr"): Promise<void> {
   console.error("[telegram] erreur dans le flux casier judiciaire:", err);
+  if (lang !== "fr") await sendMenuAudio(ctx, "casier_generic_error", t(CASIER_GENERIC_ERROR, lang), lang, "erreur.ogg");
   await ctx.reply(tBilingual(CASIER_GENERIC_ERROR, lang));
 }
 
@@ -579,6 +585,7 @@ export function getBot(): Bot {
     if (key === "casier" && ctx.chat) {
       const casierLang: LocalLang = lang === "fr" ? "dyu" : lang;
       startCasierSession(ctx.chat.id, casierLang);
+      await sendMenuAudio(ctx, CASIER_ASK_DOC1_AUDIO_KEY, t(CASIER_ASK_DOC1_CATALOG, casierLang), casierLang, "casier.ogg");
       await ctx.reply(casierAskDoc1(casierLang));
       return;
     }
@@ -665,7 +672,7 @@ export function getBot(): Bot {
         const largest = ctx.message.photo.at(-1)!;
         const buffer = await downloadTelegramFile(bot, largest.file_id);
         const result = await handleCasierDocument(ctx.chat.id, buffer, "image/jpeg", "photo.jpg");
-        await replyToCasierStep(ctx, result);
+        await replyToCasierStep(ctx, result, lang);
       } catch (err) {
         await replyToCasierError(ctx, err, lang);
       }
@@ -734,7 +741,7 @@ export function getBot(): Bot {
           mimeType,
           ctx.message.document.file_name ?? "document",
         );
-        await replyToCasierStep(ctx, result);
+        await replyToCasierStep(ctx, result, lang);
       } catch (err) {
         await replyToCasierError(ctx, err, lang);
       }
@@ -798,10 +805,10 @@ export function getBot(): Bot {
         await ctx.reply(tBilingual(CASIER_CANCELLED, lang));
         return;
       }
-      if (casierSession.step === "awaiting_field") {
+      if (casierSession.step === "awaiting_field" || casierSession.step === "awaiting_confirmation") {
         try {
           const result = await handleCasierTextAnswer(ctx.chat.id, ctx.message.text);
-          await replyToCasierStep(ctx, result);
+          await replyToCasierStep(ctx, result, lang);
         } catch (err) {
           await replyToCasierError(ctx, err, lang);
         }

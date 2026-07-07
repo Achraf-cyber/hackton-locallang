@@ -56,6 +56,19 @@ async function main() {
     govDocMenuAudioText,
   } = await import("../lib/messages");
   const { QUOTA_REACHED_MESSAGES } = await import("../lib/quota");
+  const {
+    CASIER_ASK_DOC1_CATALOG,
+    CASIER_ASK_DOC2_CATALOG,
+    CASIER_ANSWER_NOT_RECOGNIZED,
+    CASIER_SUCCESS,
+    CASIER_CONFIRM_PROMPT,
+    CASIER_ASK_DOC1_AUDIO_KEY,
+    CASIER_ASK_DOC2_AUDIO_KEY,
+    CASIER_ANSWER_NOT_RECOGNIZED_AUDIO_KEY,
+    CASIER_SUCCESS_AUDIO_KEY,
+    CASIER_CONFIRM_PROMPT_AUDIO_KEY,
+  } = await import("../lib/telegram/casierFlow");
+  const { FIELD_ORDER, casierFieldAudioKey, formatFieldPromptAudio } = await import("../lib/telegram/casierFields");
 
   const LANGS = ["mos", "dyu"] as const;
 
@@ -84,6 +97,34 @@ async function main() {
     entries.push({ key: "ack_reading", lang, text: t(ACK_READING, lang) });
     entries.push({ key: "ack_thinking", lang, text: t(ACK_THINKING, lang) });
     entries.push({ key: "casier_cancelled", lang, text: t(CASIER_CANCELLED, lang) });
+
+    // Flux "casier judiciaire" (lib/telegram/casierFlow.ts) : restait
+    // entièrement texte-seul jusqu'ici (aucun de ces messages n'était joué
+    // via sendMenuAudio côté bot.ts), alors que ce sont précisément les
+    // usagers qui ne lisent pas le français qui en ont le plus besoin.
+    entries.push({ key: CASIER_ASK_DOC1_AUDIO_KEY, lang, text: t(CASIER_ASK_DOC1_CATALOG, lang) });
+    entries.push({ key: CASIER_ASK_DOC2_AUDIO_KEY, lang, text: t(CASIER_ASK_DOC2_CATALOG, lang) });
+    entries.push({
+      key: CASIER_ANSWER_NOT_RECOGNIZED_AUDIO_KEY,
+      lang,
+      text: t(CASIER_ANSWER_NOT_RECOGNIZED, lang),
+    });
+    entries.push({ key: CASIER_SUCCESS_AUDIO_KEY, lang, text: t(CASIER_SUCCESS, lang) });
+    entries.push({ key: CASIER_CONFIRM_PROMPT_AUDIO_KEY, lang, text: t(CASIER_CONFIRM_PROMPT, lang) });
+
+    // Prompts des champs à réponse libre/options fixes (domicile, profession,
+    // téléphone, situation matrimoniale, pays, nationalité, région,
+    // nom/prénoms père/mère) : formatFieldPromptAudio() produit exactement
+    // le même texte à chaque appel pour ceux-là (voir casierFieldAudioKey).
+    // Les 3 champs restants (province/commune/arrondissement) dépendent de
+    // réponses précédentes et ne sont donc PAS pré-générables --
+    // casierFieldAudioKey renvoie null pour eux, exclus ici volontairement
+    // (restent texte-seul en prod).
+    for (const spec of FIELD_ORDER) {
+      const audioKey = casierFieldAudioKey(spec.key);
+      if (!audioKey) continue;
+      entries.push({ key: audioKey, lang, text: formatFieldPromptAudio(spec, {}, lang) });
+    }
   }
   // Nettoyage TTS uniforme (les deux builders de menu nettoient déjà, strip
   // est idempotent donc les ré-appliquer est sans effet).
@@ -99,26 +140,48 @@ async function main() {
   const MIN_VALID_BYTES = 2000;
   const OGG_MAGIC = Buffer.from("OggS");
 
+  // Deux runs consécutifs ont échoué en cascade le 2026-07-07 : tout allait
+  // bien puis, à partir d'une entrée, CHAQUE appel suivant échouait avec
+  // "fetch failed" (le Space HF gratuit semble parfois redémarrer/s'endormir
+  // sous la charge d'une longue série d'appels TTS séquentiels). Un seul
+  // essai par entrée transformait un incident transitoire du Space en course
+  // à recommencer tout le script depuis le début. Retry avec backoff pour
+  // absorber ça sans intervention manuelle.
+  const MAX_ATTEMPTS = 3;
+  const RETRY_BASE_DELAY_MS = 5000;
+
   let ok = 0;
   let failed = 0;
   for (const entry of entries) {
     const outPath = join(outDir, `${entry.key}-${entry.lang}.ogg`);
-    try {
-      const { audioUrl } = await speak(entry.text, entry.lang);
-      const res = await fetch(audioUrl);
-      if (!res.ok) throw new Error(`speak() a renvoyé une URL inaccessible (${res.status})`);
-      const buffer = Buffer.from(await res.arrayBuffer());
-      if (!buffer.subarray(0, 4).equals(OGG_MAGIC)) {
-        throw new Error("le fichier renvoyé n'est pas un conteneur OGG (en-tête OggS absent)");
+    let lastErr: Error | undefined;
+    let succeeded = false;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const { audioUrl } = await speak(entry.text, entry.lang);
+        const res = await fetch(audioUrl);
+        if (!res.ok) throw new Error(`speak() a renvoyé une URL inaccessible (${res.status})`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        if (!buffer.subarray(0, 4).equals(OGG_MAGIC)) {
+          throw new Error("le fichier renvoyé n'est pas un conteneur OGG (en-tête OggS absent)");
+        }
+        if (buffer.length < MIN_VALID_BYTES) {
+          throw new Error(`clip trop court (${buffer.length} octets < ${MIN_VALID_BYTES}) — probablement muet`);
+        }
+        writeFileSync(outPath, buffer);
+        console.log(`✅ ${entry.key}-${entry.lang}.ogg (${buffer.length} octets)${attempt > 1 ? ` [essai ${attempt}]` : ""}`);
+        ok++;
+        succeeded = true;
+        break;
+      } catch (err) {
+        lastErr = err as Error;
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * attempt));
+        }
       }
-      if (buffer.length < MIN_VALID_BYTES) {
-        throw new Error(`clip trop court (${buffer.length} octets < ${MIN_VALID_BYTES}) — probablement muet`);
-      }
-      writeFileSync(outPath, buffer);
-      console.log(`✅ ${entry.key}-${entry.lang}.ogg (${buffer.length} octets)`);
-      ok++;
-    } catch (err) {
-      console.error(`❌ ${entry.key}-${entry.lang}.ogg :`, (err as Error).message);
+    }
+    if (!succeeded) {
+      console.error(`❌ ${entry.key}-${entry.lang}.ogg (après ${MAX_ATTEMPTS} essais) :`, lastErr?.message);
       failed++;
     }
   }

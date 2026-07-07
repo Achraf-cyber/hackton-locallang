@@ -20,7 +20,7 @@ import {
   type SelectOption,
 } from "../demo/data";
 import type { DemandeurState, FiliationState } from "../demo/types";
-import { tBilingual, type Trilingual } from "../messages";
+import { t, tBilingual, type Trilingual } from "../messages";
 import type { LocalLang } from "../modelService";
 
 export type CasierFields = Partial<DemandeurState & FiliationState>;
@@ -139,6 +139,54 @@ const FIELD_ORDER: FieldSpec[] = [
       ),
     optional: true,
   },
+  // Ces 4 champs sont normalement remplis par extractIdentityFields()
+  // (lib/llm.ts) à partir de l'acte de naissance -- mais l'extraction peut
+  // légitimement échouer à les lire (document illisible, filiation absente
+  // du document...), et ExtractedIdentityFieldsSchema les déclare nullable
+  // précisément pour ce cas. Avant leur ajout ici, un échec d'extraction sur
+  // UN SEUL de ces champs faisait planter toute la session à l'étape de
+  // soumission (buildFormState levait "Champs manquants avant soumission")
+  // sans jamais donner à l'usager la moindre chance de les fournir
+  // lui-même -- confirmé en usage réel (voir les logs du 2026-07-06 :
+  // "Champs manquants avant soumission: nomPere, prenomsPere, nomMere,
+  // prenomsMere"). Les ajouter à FIELD_ORDER leur donne le même filet de
+  // sécurité conversationnel que domicile/profession/téléphone.
+  {
+    key: "nomPere",
+    prompt: {
+      fr: "Quel est le nom de famille de votre père ?",
+      mos: "Yaa bõe la fo ba yʋʋrã ?",
+      dyu: "I fa tɔgɔba ye mun ye ?",
+    },
+    options: () => null,
+  },
+  {
+    key: "prenomsPere",
+    prompt: {
+      fr: "Quels sont les prénoms de votre père ?",
+      mos: "Yaa bõe la fo ba yʋy-bilã ?",
+      dyu: "I fa tɔgɔ fitininw ye di ?",
+    },
+    options: () => null,
+  },
+  {
+    key: "nomMere",
+    prompt: {
+      fr: "Quel est le nom de famille de votre mère ?",
+      mos: "Yaa bõe la fo ma yʋʋrã ?",
+      dyu: "I ba tɔgɔba ye mun ye ?",
+    },
+    options: () => null,
+  },
+  {
+    key: "prenomsMere",
+    prompt: {
+      fr: "Quels sont les prénoms de votre mère ?",
+      mos: "Yaa bõe la fo ma yʋy-bilã ?",
+      dyu: "I ba tɔgɔ fitininw ye di ?",
+    },
+    options: () => null,
+  },
 ];
 
 /** Enlève les accents et met en minuscules, pour un matching tolérant. */
@@ -202,6 +250,24 @@ export function formatFieldPrompt(spec: FieldSpec, fields: CasierFields, lang: L
 }
 
 /**
+ * Variante AUDIO de formatFieldPrompt : langue locale seule (t, jamais
+ * tBilingual). formatFieldPrompt() intercale le français entre parenthèses
+ * pour l'affichage écran (utile aux lecteurs qui veulent vérifier le sens),
+ * mais un TTS qui lirait ces parenthèses prononcerait la traduction
+ * française à la suite de la question locale -- exactement le bug que ce
+ * fichier doit éviter (voir stripForSpeech/buildMenuAudioText dans
+ * lib/messages.ts, qui appliquent déjà ce même principe ailleurs).
+ */
+export function formatFieldPromptAudio(spec: FieldSpec, fields: CasierFields, lang: LocalLang): string {
+  const prompt = t(spec.prompt, lang);
+  const options = spec.options(fields);
+  if (!options || options.length === 0) return prompt;
+
+  const listText = options.map((o, i) => `${i + 1}. ${o.label}`).join(". ");
+  return `${prompt}. ${listText}. ${t(CHOOSE_BY_NUMBER_OR_NAME, lang)}`;
+}
+
+/**
  * Tente de faire correspondre la réponse de l'usager à une valeur valide
  * pour ce champ. Accepte : le numéro de l'option, son libellé (tolérant aux
  * accents/casse), ou -- pour les champs texte libre -- la réponse telle
@@ -223,6 +289,27 @@ export function matchFieldAnswer(spec: FieldSpec, rawAnswer: string, fields: Cas
   if (matched) return matched;
 
   return null;
+}
+
+/**
+ * Champs dont la liste d'options dépend de réponses précédentes
+ * (province -> dépend de la région choisie, etc.) : leur prompt final n'est
+ * donc PAS le même à chaque fois et ne peut pas être pré-enregistré une fois
+ * pour toutes (voir scripts/pregenerate-audio.ts, qui ne pré-génère l'audio
+ * que pour les champs absents de cet ensemble). Tous les autres champs de
+ * FIELD_ORDER ont une liste d'options fixe (ou aucune, pour le texte libre)
+ * -- leur `formatFieldPrompt` produit exactement le même texte à chaque
+ * appel, donc pré-générable.
+ */
+const DYNAMIC_FIELD_KEYS: ReadonlySet<FieldKey> = new Set([
+  "provinceNaissance",
+  "communeNaissance",
+  "arrondissementNaissance",
+]);
+
+/** Clé audio pré-générée pour ce champ, ou null si son prompt est dynamique (voir DYNAMIC_FIELD_KEYS). */
+export function casierFieldAudioKey(key: FieldKey): string | null {
+  return DYNAMIC_FIELD_KEYS.has(key) ? null : `casier_field_${key}`;
 }
 
 export { FIELD_ORDER };
