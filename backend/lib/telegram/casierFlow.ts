@@ -95,6 +95,24 @@ export function hasActiveCasierSession(chatId: number | string): boolean {
   return sessions.has(key);
 }
 
+/**
+ * Contrairement à hasActiveCasierSession() (vrai pour N'IMPORTE QUELLE étape
+ * active), ceci ne renvoie vrai QUE quand le bot attend explicitement une
+ * photo/PDF (doc1 ou doc2). À utiliser pour décider si un message photo/
+ * document entrant doit être intercepté par le flux casier -- sinon un
+ * usager en train de répondre à une question texte (awaiting_field) ou de
+ * confirmer son récap (awaiting_confirmation) qui envoie une photo pour la
+ * fonctionnalité générale "expliquer un document" se la faisait avaler par
+ * handleCasierDocument(), qui plantait avec "Document reçu hors séquence"
+ * -- la fonctionnalité générale du bot était silencieusement bloquée par
+ * une session casier active à une étape qui n'attendait pourtant aucun
+ * document.
+ */
+export function isAwaitingCasierDocument(chatId: number | string): boolean {
+  const session = getCasierSession(chatId);
+  return session?.step === "awaiting_doc1" || session?.step === "awaiting_doc2";
+}
+
 export function getCasierSession(chatId: number | string): CasierSession | undefined {
   const key = sessionKey(chatId);
   pruneIfExpired(key);
@@ -135,16 +153,22 @@ function touch(session: CasierSession): void {
 // texte-seul (aucun de ces messages n'était appelé via sendMenuAudio côté
 // bot.ts), alors même que ce sont des usagers qui ne lisent pas le français
 // qui en ont le plus besoin.
+// Le bouton "❌ Annuler" (voir casierCancelKeyboard dans bot.ts, attaché à
+// CE message) est maintenant le moyen normal de quitter -- ces textes
+// pointent vers lui plutôt que de demander à l'usager de TAPER un mot-clé
+// (le mot-clé "ANNULER" reste accepté en repli, voir message:text, mais
+// n'est plus ce qu'on met en avant : usagers ciblés = pas forcément
+// lecteurs, un bouton est plus fiable qu'un mot précis à retaper).
 export const CASIER_ASK_DOC1_CATALOG: Trilingual = {
   fr:
     "Pour votre demande de casier judiciaire, envoyez d'abord une photo ou un PDF de votre extrait/jugement " +
-    "supplétif d'acte de naissance.\n(Répondez ANNULER à tout moment pour arrêter cette démarche.)",
+    "supplétif d'acte de naissance.\n(Le bouton ❌ ci-dessous permet d'arrêter à tout moment.)",
   mos:
     "Fo sẽn dat kasiye judisiyɛɛr yellã yĩnga, tʋm-y pipi fotow bɩ PDF fo rogem sɛbɛo (acte de naissance). " +
-    "(Leb-y ANNULER wakat fãa n sa demarsã.)",
+    "(Zĩ-kãnga ning sẽn be tẽngr wã na sõng-y y sa demarsã wakat fãa.)",
   dyu:
     "I ka kasiyɛ jidisyɛr ɲinini kama, fɔlɔ i ka fɔtɔ wala PDF ci i wolo sɛbɛn (acte de naissance) ta kan. " +
-    "(I bɛ se ka ANNULER fɔ tuma o tuma walisa ka baara in dabila.)",
+    "(Bɔtɔn min bɛ duguma, o bɛ se ka baara in dabila tuma o tuma.)",
 };
 export const CASIER_ASK_DOC2_CATALOG: Trilingual = {
   fr: "Merci. Envoyez maintenant une photo ou un PDF de votre CNIB ou passeport.",

@@ -271,6 +271,17 @@ export const CASIER_CANCELLED: Trilingual = {
   fr: "Demande de casier judiciaire annulée.",
 };
 
+// Libellé du bouton "quitter le processus" affiché à chaque étape du flux
+// casier -- remplace l'ancienne sortie uniquement par le mot-clé tapé
+// "ANNULER" (repli conservé pour compatibilité) : les usagers ciblés,
+// souvent non-lecteurs, ne devraient jamais avoir à SAISIR un mot précis
+// pour quitter un processus, un simple bouton doit suffire.
+export const CASIER_CANCEL_BUTTON: Trilingual = {
+  mos: "❌ Sa",
+  dyu: "❌ Dabila",
+  fr: "❌ Annuler",
+};
+
 export const CASIER_GENERIC_ERROR: Trilingual = {
   mos: "Yell bee kasiye judisiyɛɛr ɲinigã manesem sasa. Leb-y n mak, wall tʋm-y sɛbɛo lame yell wã kell n bee.",
   dyu: "Fili kɛra i ka kasiyɛ jidisyɛr ɲinini kunnafoni la (demɔnisirasiyɔn). I ka segin ka mɛn, walima ka sɛbɛn cin tugun ni fili in bɛ to.",

@@ -51,6 +51,7 @@ import {
   ERR_GENERIC,
   ERR_WRONG_FILE,
   CASIER_CANCELLED,
+  CASIER_CANCEL_BUTTON,
   CASIER_GENERIC_ERROR,
   govDocLabel,
   govDocLabelBilingual,
@@ -60,6 +61,7 @@ import type { GovDocKey } from "../messages";
 import {
   startCasierSession,
   hasActiveCasierSession,
+  isAwaitingCasierDocument,
   getCasierSession,
   handleCasierDocument,
   handleCasierTextAnswer,
@@ -86,6 +88,18 @@ function langKeyboard(): InlineKeyboard {
 // buildMenuAudioText dans messages.ts) pour que l'usager qui ne lit pas
 // l'alphabet latin sache quel bouton correspond à quelle option entendue.
 const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+
+/**
+ * Bouton unique "quitter le processus", attaché à chaque message du flux
+ * casier (invite doc1/doc2, question de champ, récap+confirmation). Permet
+ * de sortir d'un tap plutôt que de devoir taper "ANNULER" (repli toujours
+ * accepté par ailleurs, voir le handler message:text) -- essentiel pour des
+ * usagers qui, par hypothèse de départ de cette app, ne lisent pas
+ * forcément l'alphabet latin couramment.
+ */
+function casierCancelKeyboard(lang: LocalLang): InlineKeyboard {
+  return new InlineKeyboard().text(tBilingual(CASIER_CANCEL_BUTTON, lang), "casier:cancel");
+}
 
 function actionKeyboard(lang: LocalLang): InlineKeyboard {
   return new InlineKeyboard()
@@ -190,7 +204,10 @@ async function replyToCasierStep(ctx: Context, result: CasierStepResult, lang: L
   if (result.audioKey && result.audioText) {
     await sendMenuAudio(ctx, result.audioKey, result.audioText, lang, "casier.ogg");
   }
-  await ctx.reply(result.reply);
+  // Bouton "quitter" attaché à chaque relance tant que le flux n'est pas
+  // terminé -- inutile sur le message final (done: true), le flux est déjà
+  // clos à ce moment-là.
+  await ctx.reply(result.reply, result.done ? undefined : { reply_markup: casierCancelKeyboard(lang) });
   if (!result.done) return;
 
   try {
@@ -542,6 +559,12 @@ export function getBot(): Bot {
 
   bot.callbackQuery("action:explain_doc", async (ctx) => {
     await ctx.answerCallbackQuery();
+    // L'usager choisit explicitement "expliquer un document" : une session
+    // casier active (même si elle n'attend pas de photo à cet instant précis,
+    // voir isAwaitingCasierDocument) ne doit plus intercepter la prochaine
+    // photo envoyée -- ce choix de menu EST le signal de sortie du flux
+    // casier, pas seulement le bouton dédié ou "ANNULER".
+    if (ctx.chat && hasActiveCasierSession(ctx.chat.id)) cancelCasierSession(ctx.chat.id);
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(EXPLAIN_DOC_PROMPT, lang ?? "fr");
     if (lang) await sendMenuAudio(ctx, "explain_doc_prompt", message, lang, "invite.ogg");
@@ -559,10 +582,25 @@ export function getBot(): Bot {
 
   bot.callbackQuery("action:chat", async (ctx) => {
     await ctx.answerCallbackQuery();
+    // Même raisonnement que action:explain_doc ci-dessus.
+    if (ctx.chat && hasActiveCasierSession(ctx.chat.id)) cancelCasierSession(ctx.chat.id);
     const lang = ctx.chat ? await requireLang(ctx.chat.id) : null;
     const message = t(CHAT_PROMPT, lang ?? "fr");
     if (lang) await sendMenuAudio(ctx, "chat_prompt", message, lang, "invite.ogg");
     await ctx.reply(tBilingual(CHAT_PROMPT, lang ?? "fr"));
+  });
+
+  // Bouton "❌ Annuler" attaché à chaque étape du flux casier (voir
+  // casierCancelKeyboard) : équivalent au mot-clé tapé "ANNULER" (toujours
+  // accepté par ailleurs, voir message:text), mais accessible d'un tap.
+  bot.callbackQuery("casier:cancel", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!ctx.chat) return;
+    const session = getCasierSession(ctx.chat.id);
+    const lang = session?.lang ?? (await requireLang(ctx.chat.id)) ?? "dyu";
+    cancelCasierSession(ctx.chat.id);
+    await sendMenuAudio(ctx, "casier_cancelled", t(CASIER_CANCELLED, lang), lang, "annule.ogg");
+    await ctx.reply(tBilingual(CASIER_CANCELLED, lang));
   });
 
   // -------------------------------------------------------------------------
@@ -586,7 +624,7 @@ export function getBot(): Bot {
       const casierLang: LocalLang = lang === "fr" ? "dyu" : lang;
       startCasierSession(ctx.chat.id, casierLang);
       await sendMenuAudio(ctx, CASIER_ASK_DOC1_AUDIO_KEY, t(CASIER_ASK_DOC1_CATALOG, casierLang), casierLang, "casier.ogg");
-      await ctx.reply(casierAskDoc1(casierLang));
+      await ctx.reply(casierAskDoc1(casierLang), { reply_markup: casierCancelKeyboard(casierLang) });
       return;
     }
 
@@ -661,12 +699,17 @@ export function getBot(): Bot {
     const lang = await requireLang(ctx.chat.id);
     if (!lang) return askLanguage(ctx);
 
-    // Une photo reçue pendant un flux "casier judiciaire" en cours est un
-    // document d'identité à extraire, pas une demande d'explication générique.
-    // Consomme le quota comme n'importe quel autre traitement de document
-    // (appel Gemini) : sans ce check, le flux casier serait illimité et
-    // gratuit alors que /explainPhoto et /explainDoc sont limités.
-    if (hasActiveCasierSession(ctx.chat.id)) {
+    // Une photo reçue PENDANT QUE LE BOT L'ATTEND (doc1/doc2, voir
+    // isAwaitingCasierDocument) est un document d'identité à extraire, pas
+    // une demande d'explication générique. Consomme le quota comme
+    // n'importe quel autre traitement de document (appel Gemini) : sans ce
+    // check, le flux casier serait illimité et gratuit alors que
+    // /explainPhoto et /explainDoc sont limités. Utilise volontairement
+    // isAwaitingCasierDocument() et non hasActiveCasierSession() : une
+    // session active à une AUTRE étape (question texte en cours, récap en
+    // attente de confirmation...) ne doit plus intercepter cette photo --
+    // laisser passer vers l'explication générale ci-dessous.
+    if (isAwaitingCasierDocument(ctx.chat.id)) {
       if (!(await checkQuotaOrReply(ctx, lang))) return;
       try {
         const largest = ctx.message.photo.at(-1)!;
@@ -728,10 +771,10 @@ export function getBot(): Bot {
       return;
     }
 
-    // Document reçu pendant un flux "casier judiciaire" en cours : à extraire,
-    // pas à expliquer (voir même branche sur message:photo ci-dessus, y compris
-    // pour la consommation de quota).
-    if (hasActiveCasierSession(ctx.chat.id)) {
+    // Document reçu PENDANT QUE LE BOT L'ATTEND : à extraire, pas à
+    // expliquer (voir même branche + même raisonnement sur message:photo
+    // ci-dessus, y compris pour la consommation de quota).
+    if (isAwaitingCasierDocument(ctx.chat.id)) {
       if (!(await checkQuotaOrReply(ctx, lang))) return;
       try {
         const buffer = await downloadTelegramFile(bot, ctx.message.document.file_id);
