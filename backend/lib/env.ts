@@ -27,7 +27,6 @@ const envSchema = z.object({
   // lancement Playwright EN-PROCESS (dev local uniquement, jamais en prod).
   AUTOMATION_SERVICE_URL: z.string().url("AUTOMATION_SERVICE_URL doit être une URL valide").optional(),
   DATABASE_URL: z.string().min(1, "DATABASE_URL manquant"),
-  DAILY_FREE_LIMIT: z.coerce.number().int().positive().default(8),
 });
 
 export type Env = z.infer<typeof envSchema>;

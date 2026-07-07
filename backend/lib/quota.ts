@@ -1,13 +1,23 @@
 /**
- * Quota gratuit quotidien — un utilisateur "free" (sans organisation) a droit
- * à `DAILY_FREE_LIMIT` requêtes par jour, puis peut consommer des crédits
- * payants (`paidCreditsLeft`) achetés via /api/pay. Les utilisateurs rattachés
- * à une Organization ne sont jamais bloqués (facturation gérée séparément).
+ * Quota gratuit quotidien — effectivement DÉSACTIVÉ (voir DAILY_FREE_LIMIT
+ * ci-dessous) : la logique de comptage/reset reste en place (utile si on
+ * veut réactiver une vraie limite plus tard), mais le plafond lui-même est
+ * fixé en dur à une valeur qu'aucun usage réel ne peut atteindre, PLUTÔT que
+ * lu depuis la variable d'env DAILY_FREE_LIMIT (voir lib/env.ts) -- on ne
+ * peut pas garantir depuis ce dépôt quelle valeur est réellement configurée
+ * sur le dashboard Vercel de prod (indépendante de .env.prod, qui n'est
+ * qu'un fichier de référence local jamais poussé automatiquement), donc on
+ * ne peut pas se fier à "juste augmenter la valeur par défaut" pour être sûr
+ * que la limite ne sera jamais atteinte en prod. Un plafond en dur dans le
+ * code, indépendant de toute config externe, est la seule garantie fiable.
+ * Les utilisateurs rattachés à une Organization ne sont de toute façon
+ * jamais bloqués (facturation gérée séparément) -- ceci s'applique aux
+ * usagers "free" (widget web anonyme, chat Telegram sans organisation).
  */
-
 import type { User } from "@prisma/client";
-import { getEnv } from "./env";
 import { prisma } from "./db";
+
+const DAILY_FREE_LIMIT = 1_000_000;
 
 export interface QuotaCheckResult {
   allowed: boolean;
@@ -39,7 +49,6 @@ export async function checkAndConsumeQuota(user: User): Promise<QuotaCheckResult
     return { allowed: true };
   }
 
-  const { DAILY_FREE_LIMIT } = getEnv();
   const midnight = utcMidnight();
 
   if (user.quotaResetAt < midnight) {

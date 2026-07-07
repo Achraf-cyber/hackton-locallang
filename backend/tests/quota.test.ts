@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@prisma/client";
 
-vi.mock("../lib/env", () => ({
-  getEnv: vi.fn(() => ({ DAILY_FREE_LIMIT: 3 })),
-}));
-
 vi.mock("../lib/db", () => {
   const user = {
     updateMany: vi.fn(),
@@ -42,8 +38,8 @@ describe("checkAndConsumeQuota", () => {
     vi.clearAllMocks();
   });
 
-  it("bloque après DAILY_FREE_LIMIT requêtes pour un utilisateur sans organisation", async () => {
-    const user = makeUser({ requestsToday: 3, quotaResetAt: new Date(), paidCreditsLeft: 0 });
+  it("bloque quand le plafond interne (updateMany à 0 ligne) est atteint et qu'aucun crédit payant ne reste", async () => {
+    const user = makeUser({ requestsToday: 1_000_000, quotaResetAt: new Date(), paidCreditsLeft: 0 });
     // updateMany conditionnel (requestsToday < limite) ne touche aucune ligne, puis
     // updateMany conditionnel (paidCreditsLeft > 0) non plus.
     mockUpdateManyCounts(0, 0);
@@ -51,6 +47,21 @@ describe("checkAndConsumeQuota", () => {
     const result = await checkAndConsumeQuota(user);
 
     expect(result).toEqual({ allowed: false, reason: "quota_reached" });
+  });
+
+  it("le plafond gratuit est fixé en dur à une valeur effectivement illimitée (pas lu depuis l'env)", async () => {
+    const user = makeUser({ requestsToday: 999_999, quotaResetAt: new Date() });
+    mockUpdateManyCounts(1);
+
+    const result = await checkAndConsumeQuota(user);
+
+    expect(result).toEqual({ allowed: true });
+    expect(prisma.user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "user-1", requestsToday: { lt: 1_000_000 } },
+        data: { requestsToday: { increment: 1 } },
+      }),
+    );
   });
 
   it("ne bloque jamais un utilisateur rattaché à une organisation, quel que soit requestsToday", async () => {
@@ -86,7 +97,7 @@ describe("checkAndConsumeQuota", () => {
     expect(result).toEqual({ allowed: true });
     expect(prisma.user.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "user-1", requestsToday: { lt: 3 } },
+        where: { id: "user-1", requestsToday: { lt: 1_000_000 } },
         data: { requestsToday: { increment: 1 } },
       }),
     );
