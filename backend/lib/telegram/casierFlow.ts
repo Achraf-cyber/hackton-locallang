@@ -489,6 +489,9 @@ async function advanceToNextFieldOrRecap(
   chatId: number | string,
   session: CasierSession,
 ): Promise<CasierStepResult> {
+  /*
+  // TEMP BYPASS: Ignore missing fields and go directly to confirmation 
+  // with whatever was extracted from the documents
   const next = getNextMissingField(session.fields);
   if (next) {
     session.step = "awaiting_field";
@@ -499,16 +502,10 @@ async function advanceToNextFieldOrRecap(
     return {
       reply,
       done: false,
-      // audioKey est null pour un champ dynamique (province/commune/
-      // arrondissement, voir casierFieldAudioKey) : ne peut pas être
-      // pré-généré une fois pour toutes puisqu'il change selon les réponses
-      // précédentes -- laissé texte-seul intentionnellement. Quand présent,
-      // audioText utilise la variante AUDIO (langue locale seule, voir
-      // formatFieldPromptAudio) et PAS `reply` (qui contient le français
-      // entre parenthèses, prévu pour l'écran, jamais pour être prononcé).
       ...(audioKey ? { audioKey, audioText: formatFieldPromptAudio(next, session.fields, session.lang) } : {}),
     };
   }
+  */
 
   session.step = "awaiting_confirmation";
   session.pendingField = null;
