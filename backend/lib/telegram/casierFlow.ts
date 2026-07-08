@@ -574,34 +574,34 @@ async function finalizeCasierSubmission(
 function buildFormState(session: CasierSession): DemoFormState {
   const fields = session.fields;
   // TEMP BYPASS: No validation on missing fields. We just pass what we have.
-  // The backend API route will fill in default values for anything missing.
+  // We fill in default values for anything missing so the PDF renders nicely.
   
   return {
     ...EMPTY_FORM_STATE,
     demandeur: {
-      nom: fields.nom ?? "",
-      prenoms: fields.prenoms ?? "",
-      genre: fields.genre ?? "M",
-      dateNaissance: fields.dateNaissance ?? "",
-      lieuNaissance: fields.lieuNaissance ?? "",
-      domicile: fields.domicile ?? "",
-      situationMatrimoniale: fields.situationMatrimoniale ?? "celibataire",
-      profession: fields.profession ?? "",
-      telephone: fields.telephone ?? "",
-      paysNaissance: fields.paysNaissance ?? "BF",
-      nationalite: fields.nationalite ?? "burkina_faso",
-      regionNaissance: fields.regionNaissance ?? "",
-      provinceNaissance: fields.provinceNaissance ?? "",
-      communeNaissance: fields.communeNaissance ?? "",
-      arrondissementNaissance: fields.arrondissementNaissance ?? "",
-      typePiece: fields.typePiece ?? "cnib",
-      numeroPiece: fields.numeroPiece ?? "",
+      nom: fields.nom || "Inconnu",
+      prenoms: fields.prenoms || "Inconnu",
+      genre: fields.genre || "M",
+      dateNaissance: fields.dateNaissance || "1990-01-01",
+      lieuNaissance: fields.lieuNaissance || "Inconnu",
+      domicile: fields.domicile || "Inconnu",
+      situationMatrimoniale: fields.situationMatrimoniale || "celibataire",
+      profession: fields.profession || "Sans",
+      telephone: fields.telephone || "00000000",
+      paysNaissance: fields.paysNaissance || "BF",
+      nationalite: fields.nationalite || "burkinabe",
+      regionNaissance: fields.regionNaissance || "centre",
+      provinceNaissance: fields.provinceNaissance || "kadiogo",
+      communeNaissance: fields.communeNaissance || "ouagadougou",
+      arrondissementNaissance: fields.arrondissementNaissance || "",
+      typePiece: fields.typePiece || "cnib",
+      numeroPiece: fields.numeroPiece || "00000000",
     },
     filiation: {
-      nomPere: fields.nomPere ?? "",
-      prenomsPere: fields.prenomsPere ?? "",
-      nomMere: fields.nomMere ?? "",
-      prenomsMere: fields.prenomsMere ?? "",
+      nomPere: fields.nomPere || "Inconnu",
+      prenomsPere: fields.prenomsPere || "Inconnu",
+      nomMere: fields.nomMere || "Inconnu",
+      prenomsMere: fields.prenomsMere || "Inconnu",
     },
   };
 }
