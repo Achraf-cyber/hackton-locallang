@@ -55,6 +55,38 @@ model Payment {
   createdAt      DateTime @default(now())
 }
 
+/**
+ * État du flux conversationnel "demande de casier judiciaire" (voir
+ * lib/telegram/casierFlow.ts). Persisté en base -- PAS en mémoire process
+ * (une Map en mémoire, comme avant cette migration) -- parce que rien ne
+ * garantit qu'une fonction serverless Vercel réutilise la même instance
+ * chaude entre deux mises à jour webhook Telegram consécutives (ex. le
+ * callback qui démarre la session, puis le message photo suivant qui
+ * envoie le document) : sur une instance froide différente, la Map en
+ * mémoire était vide, `isAwaitingCasierDocument` renvoyait faux, et la
+ * photo tombait dans le flux générique "expliquer un document" au lieu
+ * d'être traitée comme une pièce du dossier -- bug confirmé en usage réel.
+ *
+ * `pendingField` n'est PAS stocké tel quel : FieldSpec (casierFields.ts)
+ * contient une fonction (`options`), non sérialisable en JSON. Seule sa clé
+ * (pendingFieldKey) est persistée ; le FieldSpec complet est retrouvé via
+ * FIELD_ORDER.find() au moment de l'utiliser.
+ */
+model CasierSession {
+  chatId          String   @id
+  lang            String
+  step            String
+  fields          Json
+  pendingFieldKey String?
+  doc1Buffer      Bytes?
+  doc1MimeType    String?
+  doc1FileName    String?
+  doc2Buffer      Bytes?
+  doc2MimeType    String?
+  doc2FileName    String?
+  lastActivityAt  DateTime @default(now())
+}
+
 model Interaction {
   id            String   @id @default(uuid())
   ts            DateTime @default(now())
