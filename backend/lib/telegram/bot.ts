@@ -52,6 +52,7 @@ import {
   ERR_WRONG_FILE,
   CASIER_CANCELLED,
   CASIER_CANCEL_BUTTON,
+  CASIER_CONFIRM_BUTTON,
   CASIER_GENERIC_ERROR,
   govDocLabel,
   govDocLabelBilingual,
@@ -65,6 +66,7 @@ import {
   getCasierSession,
   handleCasierDocument,
   handleCasierTextAnswer,
+  handleCasierConfirmation,
   cancelCasierSession,
   casierAskDoc1,
   CASIER_ASK_DOC1_CATALOG,
@@ -99,6 +101,13 @@ const NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6
  */
 function casierCancelKeyboard(lang: LocalLang): InlineKeyboard {
   return new InlineKeyboard().text(tBilingual(CASIER_CANCEL_BUTTON, lang), "casier:cancel");
+}
+
+function casierConfirmKeyboard(lang: LocalLang): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(tBilingual(CASIER_CONFIRM_BUTTON, lang), "casier:confirm")
+    .row()
+    .text(tBilingual(CASIER_CANCEL_BUTTON, lang), "casier:cancel");
 }
 
 function actionKeyboard(lang: LocalLang): InlineKeyboard {
@@ -204,10 +213,11 @@ async function replyToCasierStep(ctx: Context, result: CasierStepResult, lang: L
   if (result.audioKey && result.audioText) {
     await sendMenuAudio(ctx, result.audioKey, result.audioText, lang, "casier.ogg");
   }
-  // Bouton "quitter" attaché à chaque relance tant que le flux n'est pas
+  // Bouton "quitter" ou clavier de confirmation attaché à chaque relance tant que le flux n'est pas
   // terminé -- inutile sur le message final (done: true), le flux est déjà
   // clos à ce moment-là.
-  await ctx.reply(result.reply, result.done ? undefined : { reply_markup: casierCancelKeyboard(lang) });
+  const keyboard = result.isConfirmation ? casierConfirmKeyboard(lang) : casierCancelKeyboard(lang);
+  await ctx.reply(result.reply, result.done ? undefined : { reply_markup: keyboard });
   if (!result.done) return;
 
   try {
@@ -601,6 +611,20 @@ export function getBot(): Bot {
     await cancelCasierSession(ctx.chat.id);
     await sendMenuAudio(ctx, "casier_cancelled", t(CASIER_CANCELLED, lang), lang, "annule.ogg");
     await ctx.reply(tBilingual(CASIER_CANCELLED, lang));
+  });
+
+  bot.callbackQuery("casier:confirm", async (ctx) => {
+    await ctx.answerCallbackQuery();
+    if (!ctx.chat) return;
+    const session = await getCasierSession(ctx.chat.id);
+    if (!session || session.step !== "awaiting_confirmation") return;
+    const lang = session.lang;
+    try {
+      const result = await handleCasierConfirmation(ctx.chat.id);
+      await replyToCasierStep(ctx, result, lang);
+    } catch (err) {
+      await replyToCasierError(ctx, err, lang);
+    }
   });
 
   // -------------------------------------------------------------------------

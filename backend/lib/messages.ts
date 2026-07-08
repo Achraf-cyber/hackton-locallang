@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Catalogue de messages pré-construits.
  *
  * Chaque entrée contient les variantes mos (Mooré), dyu (Dioula) et fr
@@ -280,6 +280,12 @@ export const CASIER_CANCEL_BUTTON: Trilingual = {
   mos: "❌ Sa",
   dyu: "❌ Dabila",
   fr: "❌ Annuler",
+};
+
+export const CASIER_CONFIRM_BUTTON: Trilingual = {
+  mos: "✅ Pẽge",
+  dyu: "✅ Sɔbɛyala",
+  fr: "✅ Confirmer",
 };
 
 export const CASIER_GENERIC_ERROR: Trilingual = {

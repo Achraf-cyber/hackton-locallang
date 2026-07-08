@@ -231,6 +231,14 @@ async function runWithBrowser(
   }
 }
 
+function resolveBaseUrl(): string {
+  let baseUrl = getEnv().DEMO_BASE_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_URL && (baseUrl === "http://localhost:3000" || !baseUrl)) {
+    baseUrl = `https://${process.env.VERCEL_URL}`;
+  }
+  return baseUrl;
+}
+
 /**
  * Lance et ferme son propre navigateur à chaque appel (pas de pool de
  * contextes : le volume attendu ne le justifie pas pour une démo).
@@ -240,7 +248,7 @@ async function submitCasierDemandeLocal(
   formState: DemoFormState,
   documents: { acteNaissance: CasierDocument; pieceIdentite: CasierDocument },
 ): Promise<CasierAutomationResult> {
-  const baseUrl = getEnv().DEMO_BASE_URL.replace(/\/$/, "");
+  const baseUrl = resolveBaseUrl();
   assertNotRealGovSite(baseUrl);
 
   // Import dynamique du package `playwright` COMPLET (avec gestion de
@@ -262,7 +270,7 @@ async function submitCasierDemandeServerless(
   formState: DemoFormState,
   documents: { acteNaissance: CasierDocument; pieceIdentite: CasierDocument },
 ): Promise<CasierAutomationResult> {
-  const baseUrl = getEnv().DEMO_BASE_URL.replace(/\/$/, "");
+  const baseUrl = resolveBaseUrl();
   assertNotRealGovSite(baseUrl);
 
   const [{ chromium }, sparticuzChromium] = await Promise.all([

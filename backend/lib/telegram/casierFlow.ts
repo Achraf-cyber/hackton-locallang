@@ -239,13 +239,13 @@ export const CASIER_SUCCESS: Trilingual = {
 export const CASIER_CONFIRM_PROMPT: Trilingual = {
   fr:
     "Voici le récapitulatif de votre demande. Vérifiez les informations ci-dessous.\n" +
-    "Répondez CONFIRMER pour valider et recevoir votre récépissé, ou ANNULER pour arrêter.",
+    "Appuyez sur le bouton ci-dessous pour confirmer et recevoir votre récépissé, ou sur Annuler pour arrêter.",
   mos:
     "Ne kãnga la fo zãmsã kɩbayã. Ges-y kibayã sõma.\n" +
-    "(Leb-y CONFIRMER n paase n paam y sɛbɛo, bɩ ANNULER n sa.)",
+    "(Kɩ-y tẽngr zĩ-kãnga n pẽg n paam y sɛbɛo, bɩ n sa.)",
   dyu:
     "Nin ye i ka ɲinini kunnafoni ye. I ka lajɛ a la ka a dafa.\n" +
-    "(I ka CONFIRMER fɔ walisa ka i ka sɛbɛn sɔrɔ, walima ANNULER walisa ka dabila.)",
+    "(Bɔtɔn duguma digi walisa ka a sɔbɛyala, walima ka dabila.)",
 };
 
 /**
@@ -332,6 +332,7 @@ export interface CasierDocumentResult {
   done: false;
   audioKey?: string;
   audioText?: string;
+  isConfirmation?: boolean;
 }
 
 export interface CasierFieldResult {
@@ -339,6 +340,7 @@ export interface CasierFieldResult {
   done: false;
   audioKey?: string;
   audioText?: string;
+  isConfirmation?: boolean;
 }
 
 export interface CasierFinalResult {
@@ -348,6 +350,7 @@ export interface CasierFinalResult {
   pdfBuffer: Buffer;
   audioKey?: string;
   audioText?: string;
+  isConfirmation?: boolean;
 }
 
 export type CasierStepResult = CasierDocumentResult | CasierFieldResult | CasierFinalResult;
@@ -458,9 +461,18 @@ async function handleConfirmationAnswer(
     return {
       reply: `${tBilingual(CASIER_ANSWER_NOT_RECOGNIZED, session.lang)}\n${buildRecapText(session.fields)}\n\n${tBilingual(CASIER_CONFIRM_PROMPT, session.lang)}`,
       done: false,
+      isConfirmation: true,
       audioKey: CASIER_ANSWER_NOT_RECOGNIZED_AUDIO_KEY,
       audioText: t(CASIER_ANSWER_NOT_RECOGNIZED, session.lang),
     };
+  }
+  return finalizeCasierSubmission(chatId, session);
+}
+
+export async function handleCasierConfirmation(chatId: number | string): Promise<CasierStepResult> {
+  const session = await loadSession(chatId);
+  if (!session || session.step !== "awaiting_confirmation") {
+    throw new Error("Aucune session casier en attente de confirmation.");
   }
   return finalizeCasierSubmission(chatId, session);
 }
@@ -504,6 +516,7 @@ async function advanceToNextFieldOrRecap(
   return {
     reply: `${buildRecapText(session.fields)}\n\n${tBilingual(CASIER_CONFIRM_PROMPT, session.lang)}`,
     done: false,
+    isConfirmation: true,
     // Seule l'instruction fixe ("voici le récap, répondez CONFIRMER...") est
     // prononcée -- le récapitulatif lui-même est constitué de valeurs
     // dynamiques (nom, téléphone...) et reste texte-seul, comme le code de
