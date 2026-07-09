@@ -119,10 +119,11 @@ export async function toFrench(
 /** Texte français -> langue locale + audio.
  *
  * Fait DEUX appels HTTP (traduction puis TTS) au lieu d'un seul /localize :
- * NLLB-200-3.3B (traduction) et OmniVoice (TTS dyu) vivent dans deux Spaces
- * séparés (16 Go de RAM chacun) depuis que les charger ensemble faisait
- * dépasser la RAM disponible et crasher le Space (OOM). Si TTS_SERVICE_URL
- * n'est pas défini, les deux appels retombent sur le même Space.
+ * traduction (NLLB-200-3.3B ou stack GO AI, voir model-service/app/deps.py
+ * MODEL_STACK) et TTS (MMS-TTS) vivent dans deux Spaces séparés (16 Go de
+ * RAM chacun) depuis que les charger ensemble faisait dépasser la RAM
+ * disponible et crasher le Space (OOM). Si TTS_SERVICE_URL n'est pas défini,
+ * les deux appels retombent sur le même Space.
  */
 export async function localize(
   textFr: string,

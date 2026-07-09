@@ -1,36 +1,42 @@
-# Farafina AI — Project Links
+# Farafina AI — Liens du Projet
 
-All links related to the Farafina AI project (sovereign AI for local languages — Dioula & Mooré, Burkina Faso).
+Tous les liens associés au projet Farafina AI (IA souveraine pour les langues locales — Dioula & Mooré, Burkina Faso).
 
-## Product
+## Produit
 
-| What | Link |
+| Quoi | Lien |
 |------|------|
-| Web app (translator) | https://hackton-locallang.vercel.app |
-| Government-services demo (e-casier) | https://hackton-locallang.vercel.app/demo |
-| Telegram bot | https://t.me/Africalangbot  (@Africalangbot) |
+| Application Web (traducteur) | https://hackton-locallang.vercel.app |
+| Démo des services gouvernementaux (e-casier) | https://hackton-locallang.vercel.app/demo |
+| Bot Telegram | https://t.me/Africalangbot  (@Africalangbot) |
 
-## Source code
+## Code source
 
-| What | Link |
+| Quoi | Lien |
 |------|------|
-| GitHub repository | https://github.com/Achraf-cyber/hackton-locallang |
+| Dépôt GitHub | https://github.com/Achraf-cyber/hackton-locallang |
 
-## Model services (Hugging Face Spaces)
+## Services de modèles (Hugging Face Spaces)
 
-The AI runs across separate Hugging Face Spaces (each ~16 GB) to stay within memory limits.
+L'IA fonctionne sur des espaces Hugging Face séparés (chacun d'environ 16 Go) pour rester dans les limites de mémoire.
 
-| Service | Space | Endpoint |
+| Service | Espace | Point de terminaison (Endpoint) |
 |---------|-------|----------|
-| Translation (NLLB-200-3.3B) | https://huggingface.co/spaces/AchrafCyber/model-service | https://achrafcyber-model-service.hf.space |
-| Speech-to-text / ASR (Omnilingual ASR) | https://huggingface.co/spaces/AchrafCyber/asr-service | https://achrafcyber-asr-service.hf.space |
-| Text-to-speech / TTS (OmniVoice + MMS-TTS) | https://huggingface.co/spaces/AchrafCyber/tts-service | https://achrafcyber-tts-service.hf.space |
-| Form automation (Playwright) | https://huggingface.co/spaces/AchrafCyber/automation-service | https://achrafcyber-automation-service.hf.space |
+| Traduction (NLLB-200-3.3B ou stack GO AI selon `MODEL_STACK`) | https://huggingface.co/spaces/AchrafCyber/model-service | https://achrafcyber-model-service.hf.space |
+| Reconnaissance vocale / ASR (Omnilingual ASR) | https://huggingface.co/spaces/AchrafCyber/asr-service | https://achrafcyber-asr-service.hf.space |
+| Synthèse vocale / TTS (MMS-TTS, dioula + mooré) | https://huggingface.co/spaces/AchrafCyber/tts-service | https://achrafcyber-tts-service.hf.space |
+| Automatisation de formulaires (Playwright) — **non déployé actuellement** | à créer sur huggingface.co/new-space | — |
 
 ## Notes
 
-- The Telegram bot handle is `@Africalangbot`.
-- The web app is deployed on Vercel; the model services on Hugging Face.
-- Replace/confirm any URL above if a Space or deployment is renamed.
+- L'identifiant du bot Telegram est `@Africalangbot`.
+- L'application web est déployée sur Vercel ; les services de modèles sur Hugging Face.
+- Remplacez/confirmez toute URL ci-dessus si un espace ou un déploiement est renommé.
+- Le Space d'automatisation Playwright existe dans le code (`automation-service/`)
+  mais n'est pas encore déployé : le workflow cible un nom de Space placeholder
+  (`AchrafCyber/automation-service-disabled`) tant que ce Space n'a pas été créé
+  manuellement.
+- OmniVoice a été testé pour le TTS dioula puis abandonné (articulation
+  incorrecte de certains mots) ; le backend actif est `facebook/mms-tts-dyu`.
 
-_Last updated: 2026-07-06_
+_Dernière mise à jour : 09-07-2026_
