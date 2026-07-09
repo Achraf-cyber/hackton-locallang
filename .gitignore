@@ -19,3 +19,8 @@ automation/fixtures/
 
 # Env
 .env
+
+# --- added by reorg safeguard 2026-07-09 ---
+build/
+.dart_tool/
+dist/
