@@ -1,62 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# backend
 
-## Getting Started
+Next.js 16 (App Router) application: web translator UI, the `/demo` e-casier site, all API
+routes, and the Telegram bot webhook. Part of the [Farafina AI](../README.md) monorepo.
 
-First, run the development server:
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+cp .env.example .env.local     # fill in GEMINI_API_KEY, DATABASE_URL, MODEL_SERVICE_URL...
+npx prisma migrate deploy
+npm run dev                    # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Note: the Prisma CLI reads `.env`, not `.env.local`. Export `DATABASE_URL` in your shell (or copy
+it to `.env`) before running Prisma commands.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` / `build` / `start` | Next.js dev server, production build (runs `prisma generate`), start |
+| `npm test` | Vitest unit tests (`tests/`) |
+| `npm run lint` | ESLint |
+| `npm run dev:bot` | Run the Telegram bot locally (needs `TELEGRAM_TOKEN`) |
+| `npm run pregenerate-audio` | Regenerate the fixed bot voice prompts in `public/audio/` (needs the model service) |
 
-## Learn More
+## API routes (`app/api/`)
 
-To learn more about Next.js, take a look at the following resources:
+| Route | Purpose |
+|-------|---------|
+| `POST /api/text` | Simplify and translate text (`text`, `lang` = `dyu`/`mos`, `mode` = `answer`/`explain`) |
+| `POST /api/voice` | Transcribe speech, answer, translate and synthesize audio |
+| `POST /api/photo` | Explain an image or PDF (max 15 MB) |
+| `POST /api/telegram` | Telegram webhook |
+| `POST /api/register-email`, `GET /api/user-stats`, `GET /api/stats` | User registration and usage stats |
+| `POST /api/pay` | Credit purchase (**mock** provider) |
+| `GET /api/health` | Health check |
+| `/api/demo/*` | Backend of the e-casier demo site |
+| `/api/admin/organizations` | Organization management |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Request and response details live in each `route.ts` file (Zod schemas at the top).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Key modules (`lib/`)
 
-## Deploy on Vercel
+`orchestrator.ts` (LLM + model-service pipeline), `llm.ts` (Gemini), `modelService.ts` (HTTP
+client), `quota.ts`, `identity.ts`, `session.ts`, `telegram/` (bot and casier state machine),
+`demo/` and `demoAutomation.ts` (demo site and automation client), `env.ts` (validated env).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Business model
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The Prisma schema (`prisma/schema.prisma`) is ready for a commercial launch:
 
-## Modele economique
-
-Le schema Prisma (`prisma/schema.prisma`) est deja pret pour un vrai lancement
-commercial :
-
-- **Organization** : comptes entreprise/administration avec un plan, une
-  config de marque (`brandConfig`) et un glossaire specifique
-  (`glossaryOverrides`). Un `User` rattache a une `Organization`
-  (`organizationId`) n'est jamais soumis au quota gratuit journalier - la
-  facturation se fait alors au niveau de l'organisation (a batir separement).
-- **Quota gratuit** (`lib/quota.ts`) : chaque `User` sans organisation a droit
-  a `DAILY_FREE_LIMIT` requetes par jour (`requestsToday` / `quotaResetAt`,
-  reset a minuit UTC), puis peut consommer des credits payants
-  (`paidCreditsLeft`).
-- **Payment** : chaque achat de credits cree une ligne `Payment`
-  (`provider`, `amountFcfa`, `creditsGranted`, `status`). Le flux de credit
-  (creation -> confirmation -> incrementation de `paidCreditsLeft`) est reel
-  et deja branche sur `app/api/pay/route.ts` et le bouton de paiement de
-  `app/page.tsx`.
-
-Il ne manque qu'une **vraie integration de paiement mobile money** (Orange
-Money, Wave, CinetPay...) pour remplacer `app/api/pay/route.ts`, qui est
-actuellement un **mock** : il simule une confirmation immediate sans appel
-reseau reel. Le reste du modele (schema, quota, organisations) est concu pour
-ne pas changer lors de cette bascule.
+- **Organization**: enterprise or administration accounts with a plan, a brand config and a
+  glossary. A `User` attached to an organization is never subject to the free quota.
+- **Free quota** (`lib/quota.ts`): the counting and reset logic exists, but the daily limit is
+  currently hard-coded to a value no real usage can reach, so it is effectively disabled.
+- **Payment**: each credit purchase creates a `Payment` row. `app/api/pay/route.ts` is a **mock**
+  that simulates an immediate confirmation. A real mobile-money integration (Orange Money, Wave,
+  CinetPay...) is still missing.

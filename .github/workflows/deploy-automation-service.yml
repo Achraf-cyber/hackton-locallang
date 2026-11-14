@@ -17,6 +17,9 @@ env:
 
 jobs:
   deploy:
+    # Disabled until the Space exists: set the repository variable
+    # AUTOMATION_SPACE_ENABLED=true and point HF_SPACE to the real Space.
+    if: ${{ vars.AUTOMATION_SPACE_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout monorepo
